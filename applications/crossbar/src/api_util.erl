@@ -43,6 +43,10 @@
         ,encode_start_key/1, decode_start_key/1
         ]).
 
+-ifdef(TEST).
+-export([csv_body/2]).
+-endif.
+
 -include("crossbar.hrl").
 
 -define(MAX_UPLOAD_SIZE, kapps_config:get_integer(?CONFIG_CAT, <<"max_upload_size">>, 8000000)). %% limit the whole payload/file size
