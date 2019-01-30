@@ -137,11 +137,10 @@ system_config_document_schema(Id) ->
 
 -spec get_system_config_document_schema(kz_term:ne_binary()) -> kz_json:object().
 get_system_config_document_schema(Id) ->
+    SchemaName = system_schema_name(Id),
     {'ok', SysConfigSchema} = load_system_config_schema(),
-    [NodeRegex|_] = kz_json:get_keys(<<"patternProperties">>, SysConfigSchema),
-
-    kz_json:set_values([{[<<"properties">>, <<"default">>, <<"$ref">>], system_schema_name(Id)}
-                       ,{[<<"patternProperties">>, NodeRegex, <<"$ref">>], system_schema_name(Id)}
-                       ]
-                      ,kz_doc:public_fields(SysConfigSchema)
-                      ).
+    Patterns = kz_json:get_keys(<<"patternProperties">>, SysConfigSchema),
+    Values = [{[<<"properties">>, <<"default">>, <<"$ref">>], SchemaName}
+              | [{[<<"patternProperties">>, Pattern, <<"$ref">>], SchemaName} || Pattern <- Patterns]
+             ],
+    kz_json:set_values(Values, kz_doc:public_fields(SysConfigSchema)).
