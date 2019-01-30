@@ -1207,7 +1207,7 @@ validate_system_config(Id) ->
 
 -spec get_config_document(kz_term:ne_binary()) -> kz_json:object().
 get_config_document(Id) ->
-    kz_doc:public_fields(maybe_new(kapps_config:fetch_category(Id))).
+    kz_doc:public_fields(maybe_new(kapps_config:fetch_category(Id, 'false'))).
 
 -spec maybe_new({'ok', kz_json:object()} | {'error', any()}) -> kz_json:object().
 maybe_new({'ok', Doc}) -> Doc;
