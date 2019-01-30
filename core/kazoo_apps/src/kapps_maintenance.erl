@@ -1183,7 +1183,7 @@ deprecate_timezone_for_node(Node, AccountsConfig, _Timezone, _Default) ->
 validate_system_configs() ->
     [{Config, merge_errors(Status)}
      || Config <- kapps_config_doc:list_configs(),
-        Status <- [validate_system_config(Config)],
+        Status <- [do_validate_system_config(Config)],
         [] =/= Status
     ].
 
@@ -1196,8 +1196,15 @@ merge_errors([{_Code, _Message, ErrorJObj} | StatusErrors]) ->
                ,StatusErrors
                ).
 
--spec validate_system_config(kz_term:ne_binary()) -> kz_json_schema:validation_errors().
+-spec validate_system_config(kz_term:ne_binary()) -> kz_json:object().
 validate_system_config(Id) ->
+    case do_validate_system_config(Id) of
+        [] -> kz_json:new();
+        Errors -> merge_errors(Errors)
+    end.
+
+-spec do_validate_system_config(kz_term:ne_binary()) -> kz_json_schema:validation_errors().
+do_validate_system_config(Id) ->
     Doc = get_config_document(Id),
     Schema = kapps_config_util:system_config_document_schema(Id),
     case kz_json_schema:validate(Schema, Doc) of

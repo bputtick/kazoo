@@ -47,7 +47,7 @@
         ]).
 
 -export([does_schema_exist/1]).
--export([check_system_configs/0]).
+-export([check_system_configs/0, check_system_config/1]).
 -export([update_schemas/0]).
 
 -export([db_init/0]).
@@ -1312,11 +1312,36 @@ set_app_screenshots(AppId, PathToScreenshotsFolder) ->
 -spec check_system_configs() -> 'ok'.
 check_system_configs() ->
     lager:notice("starting system schemas validation"),
-    _ = [lager:warning("System config ~s validation error:~p", [Config, Error])
-         || {Config, Error} <- kapps_maintenance:validate_system_configs()
+    _ = [log_system_config_errors(Config, Errors)
+         || {Config, Errors} <- kapps_maintenance:validate_system_configs()
         ],
     lager:notice("finished system schemas validation"),
     'ok'.
+
+-spec check_system_config(kz_term:ne_binary()) -> 'ok'.
+check_system_config(SystemConfig) ->
+    lager:notice("validating ~s system schema", [SystemConfig]),
+    log_system_config_errors(SystemConfig, kapps_maintenance:validate_system_config(SystemConfig)),
+    lager:notice("finished validating ~s system schema", [SystemConfig]),
+    'ok'.
+
+
+-spec log_system_config_errors(kz_term:ne_binary(), kz_json:object()) -> 'ok'.
+log_system_config_errors(Config, ErrorsObj) ->
+    {'ok', Doc} = kapps_config:fetch_category(Config, 'false'),
+    lager:warning("System config ~s validation errors", [Config]),
+    Fun = fun({Path, ErrorJObj}) ->
+                  Keys = [binary:replace(Part, <<"%2E">>, <<".">>, ['global'])
+                           || Part <- binary:split(Path, <<".">>, ['global'])
+                         ],
+                  Value = kz_json:get_value(Keys, Doc),
+                  Fun2 = fun({_Type, TypeObj}) ->
+                                 Message = kz_json:get_ne_binary_value(<<"message">>, TypeObj),
+                                 lager:warning(">>>>> ~p => '~p' : ~s", [Keys, Value, Message])
+                         end,
+                  kz_json:foreach(Fun2, ErrorJObj)
+          end,
+    kz_json:foreach(Fun, ErrorsObj).
 
 %%------------------------------------------------------------------------------
 %% @doc Updates system schemas using files in Crossbar `priv' folder during

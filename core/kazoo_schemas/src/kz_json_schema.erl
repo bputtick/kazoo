@@ -785,7 +785,7 @@ build_validate_error(Property, Code, Message, Options) ->
             || P <- Property,
                Bin <- [kz_term:to_binary(P)]
            ],
-    Key = kz_binary:join(Property, <<".">>),
+    Key = kz_binary:join(Keys, <<".">>),
 
     {props:get_value('error_code', Options)
     ,props:get_value('error_message', Options)
