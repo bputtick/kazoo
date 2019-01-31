@@ -44,6 +44,7 @@
                                         [jesse_error:error_reason()]).
 -type schema_loader_fun() :: fun((kz_term:ne_binary()) -> {'ok', kz_json:object()} | kz_json:object() | 'not_found').
 -type setter_fun() :: fun((kz_json:path(), kz_json:json_term(), kz_json:object()) -> kz_json:object()).
+-type getter_fun() :: fun((kz_json:path(), kz_json:object(), jesse:json_term()) -> jesse:json_term()).
 
 -type jesse_option() :: {'parser_fun', parser_fun()} |
                         {'error_handler', error_handler_fun()} |
@@ -52,6 +53,7 @@
                         {'schema_loader_fun', schema_loader_fun()} |
                         {'external_validator', extra_validator()} |
                         {'setter_fun', setter_fun()} |
+                        {'getter_fun', getter_fun()} |
                         {'validator_options', validator_options()} |
                         {'extra_validator_options', extra_validator_options()}.
 
@@ -60,6 +62,7 @@
 -define(DEFAULT_OPTIONS, [{'schema_loader_fun', fun load/1}
                          ,{'allowed_errors', 'infinity'}
                          ,{'setter_fun', fun set_value/3}
+                         ,{'getter_fun', fun get_value/3}
                          ,{'validator_options', ['use_defaults'
                                                 ,'apply_defaults_to_empty_objects'
                                                 ]}
@@ -883,6 +886,10 @@ filter(JObj, Schema) ->
 set_value(Path, Value, JObj) ->
     FixedPath = fix_path(Path),
     kz_json:set_value(FixedPath, Value, JObj).
+
+get_value(Path, JObj, Default) ->
+    FixedPath = fix_path(Path),
+    kz_json:get_value(FixedPath, JObj, Default).
 
 -spec fix_path(kz_json:path()) -> kz_json:path().
 fix_path(Path) ->
