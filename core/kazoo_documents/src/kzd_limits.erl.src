@@ -10,6 +10,7 @@
 -export([burst_trunks/1, burst_trunks/2, set_burst_trunks/2]).
 -export([calls/1, calls/2, set_calls/2]).
 -export([inbound_trunks/1, inbound_trunks/2, set_inbound_trunks/2]).
+-export([onnet_exempt/1, onnet_exempt/2, set_onnet_exempt/2]).
 -export([outbound_trunks/1, outbound_trunks/2, set_outbound_trunks/2]).
 -export([resource_consuming_calls/1, resource_consuming_calls/2, set_resource_consuming_calls/2]).
 -export([twoway_trunks/1, twoway_trunks/2, set_twoway_trunks/2]).
@@ -73,6 +74,18 @@ inbound_trunks(Doc, Default) ->
 -spec set_inbound_trunks(doc(), integer()) -> doc().
 set_inbound_trunks(Doc, InboundTrunks) ->
     kz_json:set_value([<<"inbound_trunks">>], InboundTrunks, Doc).
+
+-spec onnet_exempt(doc()) -> boolean().
+onnet_exempt(Doc) ->
+    onnet_exempt(Doc, false).
+
+-spec onnet_exempt(doc(), Default) -> boolean() | Default.
+onnet_exempt(Doc, Default) ->
+    kz_json:get_boolean_value([<<"onnet_exempt">>], Doc, Default).
+
+-spec set_onnet_exempt(doc(), boolean()) -> doc().
+set_onnet_exempt(Doc, OnnetExempt) ->
+    kz_json:set_value([<<"onnet_exempt">>], OnnetExempt, Doc).
 
 -spec outbound_trunks(doc()) -> kz_term:api_integer().
 outbound_trunks(Doc) ->

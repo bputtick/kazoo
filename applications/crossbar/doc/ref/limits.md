@@ -14,6 +14,7 @@ Key | Description | Type | Default | Required | Support Level
 `burst_trunks` | The number of two-way, flat-rate trunks used only if no other trunks are available | `integer()` |   | `false` | `beta`
 `calls` | A hard limit for the total number calls | `integer()` |   | `false` | `beta`
 `inbound_trunks` | The number of inbound, flat-rate trunks | `integer()` |   | `false` | `supported`
+`onnet_exempt` | Determines if onnet-terminated calls should be exempt from billing (kazoo account to kazoo account calls) | `boolean()` | `false` | `false` | `beta`
 `outbound_trunks` | The number of outbound, flat-rate trunks | `integer()` |   | `false` | `supported`
 `resource_consuming_calls` | A hard limit for the number of resource consuming calls | `integer()` |   | `false` | `beta`
 `twoway_trunks` | The number of two-way, flat-rate trunks | `integer()` |   | `false` | `beta`

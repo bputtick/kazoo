@@ -27,6 +27,12 @@
             "support_level": "supported",
             "type": "integer"
         },
+        "onnet_exempt": {
+            "default": false,
+            "description": "Determines if onnet-terminated calls should be exempt from billing (kazoo account to kazoo account calls)",
+            "support_level": "beta",
+            "type": "boolean"
+        },
         "outbound_trunks": {
             "description": "The number of outbound, flat-rate trunks",
             "minimum": 0,
@@ -44,12 +50,6 @@
             "minimum": 0,
             "support_level": "beta",
             "type": "integer"
-        },
-        "onnet_exempt": {
-            "description": "Determines if onnet-terminated calls should be exempt from billing (kazoo account to kazoo account calls)",
-            "default": false,
-            "support_level": "beta",
-            "type": "boolean"
         }
     },
     "type": "object"
