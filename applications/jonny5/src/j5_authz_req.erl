@@ -196,41 +196,45 @@ maybe_authorize(Request, Limits) ->
 
 -spec maybe_authorize_exception(j5_request:request(), j5_limits:limits()) -> j5_request:request().
 maybe_authorize_exception(Request, Limits) ->
-    CallDirection = j5_request:call_direction(Request),
     AuthType = kz_json:get_value(<<"Authorizing-Type">>, j5_request:ccvs(Request)),
-    ResourceType = kz_json:get_value(<<"Resource-Type">>, j5_request:ccvs(Request)),
-    Classification = j5_request:classification(Request),
 
     case is_authorizing_mobile(AuthType) of
         'true' ->
             lager:debug("allowing mobile call"),
             j5_per_minute:authorize(Request, Limits);
-        'false' ->
-            lager:debug("The resource type is ~s",[ResourceType]),
-            case  maybe_authorize_onnet(ResourceType, Limits) of
-                'true' ->
-                    lager:debug("allowing onnet-termination call"),
-                    j5_request:authorize(<<"limits_disabled">>, Request, Limits);
-                'false' ->
-                    case Classification of
-                        <<"emergency">> ->
-                            lager:debug("allowing emergency call"),
-                            j5_request:authorize(<<"limits_disabled">>, Request, Limits);
-                        <<"tollfree_us">> when CallDirection =:= <<"outbound">> ->
-                            lager:debug("allowing outbound tollfree call"),
-                            j5_request:authorize(<<"limits_disabled">>, Request, Limits);
-                        _Else -> maybe_hard_limit(Request, Limits)
-                    end
-            end
+        'false' -> maybe_authorize_resource_type(ResourceType, Request, Limits);
     end.
-
--spec maybe_authorize_onnet(kz_term:api_ne_binary(), j5_limits:limits()) -> boolean().
-maybe_authorize_onnet(<<"onnet-termination">>, Limits) -> j5_limits:onnet_termination_exempt(Limits);
-maybe_authorize_onnet(_, _) -> 'false'.
 
 -spec is_authorizing_mobile(kz_term:api_ne_binary()) -> boolean().
 is_authorizing_mobile(<<"mobile">>) -> 'true';
 is_authorizing_mobile(_) -> 'false'.
+
+-spec maybe_authorize_resource_type(kz_term:api_ne_binary(), j5_limits:limits()) -> j5_request:request().
+maybe_authorize_resource_type(Request, Limit) ->
+    ResourceType = kz_json:get_value(<<"Resource-Type">>, j5_request:ccvs(Request)),
+    CanBypassOnnet = j5_limits:bypass_onnet(Limits),
+
+    case ResourceType of
+        <<"onnet-termination">> when CanBypassOnnet ->
+            lager:debug("allowing onnet-termination call"),
+            j5_request:authorize(<<"limits_disabled">>, Request, Limits);
+        _Else -> maybe_authorize_classificiation(Request, Limits);
+    end.
+
+-spec maybe_authorize_classificiation(Request, Limits) -> j5_request:request().
+maybe_authorize_classificiation(Request, Limits) ->
+    Classification = j5_request:classification(Request),
+    CallDirection = j5_request:call_direction(Request),
+
+    case Classification of
+        <<"emergency">> ->
+            lager:debug("allowing emergency call"),
+            j5_request:authorize(<<"limits_disabled">>, Request, Limits);
+        <<"tollfree_us">> when CallDirection =:= <<"outbound">> ->
+            lager:debug("allowing outbound tollfree call"),
+            j5_request:authorize(<<"limits_disabled">>, Request, Limits);
+        _Else -> maybe_hard_limit(Request, Limits)
+    end.
 
 -spec maybe_hard_limit(j5_request:request(), j5_limits:limits()) -> j5_request:request().
 maybe_hard_limit(Request, Limits) ->
