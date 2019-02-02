@@ -12,6 +12,7 @@ Key | Description | Type | Default | Required | Support Level
 --- | ----------- | ---- | ------- | -------- | -------------
 `allow_prepay` | Determines if the account would like to allow per-minute calls if they have no available credit | `boolean()` | `true` | `false` | `supported`
 `burst_trunks` | The number of two-way, flat-rate trunks used only if no other trunks are available | `integer()` |   | `false` | `beta`
+`bypass_offnet` | Determines if onnet-terminated calls should be exempt from billing (kazoo account to kazoo account calls) | `boolean()` | `false` | `false` | `beta`
 `calls` | A hard limit for the total number calls | `integer()` |   | `false` | `beta`
 `inbound_trunks` | The number of inbound, flat-rate trunks | `integer()` |   | `false` | `supported`
 `outbound_trunks` | The number of outbound, flat-rate trunks | `integer()` |   | `false` | `supported`

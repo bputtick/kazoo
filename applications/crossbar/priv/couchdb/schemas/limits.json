@@ -15,6 +15,12 @@
             "support_level": "beta",
             "type": "integer"
         },
+        "bypass_offnet": {
+            "default": false,
+            "description": "Determines if onnet-terminated calls should be exempt from billing (kazoo account to kazoo account calls)",
+            "support_level": "beta",
+            "type": "boolean"
+        },
         "calls": {
             "description": "A hard limit for the total number calls",
             "minimum": 0,

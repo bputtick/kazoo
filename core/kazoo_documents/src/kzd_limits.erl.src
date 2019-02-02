@@ -8,6 +8,7 @@
 -export([new/0]).
 -export([allow_prepay/1, allow_prepay/2, set_allow_prepay/2]).
 -export([burst_trunks/1, burst_trunks/2, set_burst_trunks/2]).
+-export([bypass_offnet/1, bypass_offnet/2, set_bypass_offnet/2]).
 -export([calls/1, calls/2, set_calls/2]).
 -export([inbound_trunks/1, inbound_trunks/2, set_inbound_trunks/2]).
 -export([outbound_trunks/1, outbound_trunks/2, set_outbound_trunks/2]).
@@ -49,6 +50,18 @@ burst_trunks(Doc, Default) ->
 -spec set_burst_trunks(doc(), integer()) -> doc().
 set_burst_trunks(Doc, BurstTrunks) ->
     kz_json:set_value([<<"burst_trunks">>], BurstTrunks, Doc).
+
+-spec bypass_offnet(doc()) -> boolean().
+bypass_offnet(Doc) ->
+    bypass_offnet(Doc, false).
+
+-spec bypass_offnet(doc(), Default) -> boolean() | Default.
+bypass_offnet(Doc, Default) ->
+    kz_json:get_boolean_value([<<"bypass_offnet">>], Doc, Default).
+
+-spec set_bypass_offnet(doc(), boolean()) -> doc().
+set_bypass_offnet(Doc, BypassOffnet) ->
+    kz_json:set_value([<<"bypass_offnet">>], BypassOffnet, Doc).
 
 -spec calls(doc()) -> kz_term:api_integer().
 calls(Doc) ->
