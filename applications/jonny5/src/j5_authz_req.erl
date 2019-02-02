@@ -202,7 +202,7 @@ maybe_authorize_exception(Request, Limits) ->
         'true' ->
             lager:debug("allowing mobile call"),
             j5_per_minute:authorize(Request, Limits);
-        'false' -> maybe_authorize_resource_type(ResourceType, Request, Limits);
+        'false' -> maybe_authorize_resource_type(Request, Limits)
     end.
 
 -spec is_authorizing_mobile(kz_term:api_ne_binary()) -> boolean().
@@ -210,7 +210,7 @@ is_authorizing_mobile(<<"mobile">>) -> 'true';
 is_authorizing_mobile(_) -> 'false'.
 
 -spec maybe_authorize_resource_type(kz_term:api_ne_binary(), j5_limits:limits()) -> j5_request:request().
-maybe_authorize_resource_type(Request, Limit) ->
+maybe_authorize_resource_type(Request, Limits) ->
     ResourceType = kz_json:get_value(<<"Resource-Type">>, j5_request:ccvs(Request)),
     CanBypassOnnet = j5_limits:bypass_onnet(Limits),
 
@@ -218,10 +218,10 @@ maybe_authorize_resource_type(Request, Limit) ->
         <<"onnet-termination">> when CanBypassOnnet ->
             lager:debug("allowing onnet-termination call"),
             j5_request:authorize(<<"limits_disabled">>, Request, Limits);
-        _Else -> maybe_authorize_classificiation(Request, Limits);
+        _Else -> maybe_authorize_classificiation(Request, Limits)
     end.
 
--spec maybe_authorize_classificiation(Request, Limits) -> j5_request:request().
+-spec maybe_authorize_classificiation(kz_term:api_ne_binary(), j5_limits:limits()) -> j5_request:request().
 maybe_authorize_classificiation(Request, Limits) ->
     Classification = j5_request:classification(Request),
     CallDirection = j5_request:call_direction(Request),
