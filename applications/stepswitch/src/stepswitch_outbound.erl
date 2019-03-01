@@ -43,10 +43,26 @@ handle_audio_req(OffnetReq) ->
 
 -spec handle_audio_req(kz_term:ne_binary(), kapi_offnet_resource:req()) -> any().
 handle_audio_req(Number, OffnetReq) ->
-    case knm_number:lookup_account(Number) of
+    case maybe_local_account(Number) of
         {'ok', _AccountId, Props} -> maybe_force_outbound(Props, OffnetReq);
         _ -> maybe_bridge(Number, OffnetReq)
     end.
+
+-spec maybe_local_account(kz_term:ne_binary()) -> any().
+maybe_local_account(Number) ->
+	Routines = [fun cf_interaccount:lookup_account/1
+			   ,fun knm_number:lookup_account/1
+			   ],
+    maybe_local_account(Number, Routines).
+
+-spec maybe_local_account(kz_term:ne_binary(), list()) -> any().
+maybe_local_account(Number, [Fun|Routines]) ->
+   case Fun(Number) of 
+       {'ok', _, _} = Ok -> Ok;
+       _ -> maybe_local_account(Number, Routines)
+   end;
+maybe_local_account(_Number, []) -> false.
+
 
 %%------------------------------------------------------------------------------
 %% @doc

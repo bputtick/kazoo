@@ -108,6 +108,7 @@ build_offnet_request(Data, Call) ->
     {AssertedNumber, AssertedName, AssertedRealm} =
         get_asserted_identity(Data, Call),
     {CIDNumber, CIDName} = get_caller_id(Data, Call),
+    lager:debug("Force Interaccount ~s",[kz_json:is_true(<<"force_interaccount">>, Data)]),
     props:filter_undefined(
       [{?KEY_ACCOUNT_ID, kapps_call:account_id(Call)}
       ,{?KEY_ACCOUNT_REALM, kapps_call:account_realm(Call)}
@@ -125,6 +126,7 @@ build_offnet_request(Data, Call) ->
       ,{?KEY_E_CALLER_ID_NUMBER, ECIDNum}
       ,{?KEY_FLAGS, get_flags(Data, Call)}
       ,{?KEY_FORMAT_FROM_URI, kz_json:is_true(<<"format_from_uri">>, Data)}
+      ,{?KEY_FORCE_INTERACCOUNT, kz_json:is_true(<<"force_interaccount">>, Data)}
       ,{?KEY_FROM_URI_REALM, get_from_uri_realm(Data, Call)}
       ,{?KEY_HUNT_ACCOUNT_ID, get_hunt_account_id(Data, Call)}
       ,{?KEY_IGNORE_EARLY_MEDIA, get_ignore_early_media(Data)}

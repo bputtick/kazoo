@@ -1,0 +1,7 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "_id": "callflows.interaccount",
+    "description": "Validator for the interaccount callflow data object",
+    "properties": {},
+    "type": "object"
+}
