@@ -169,6 +169,7 @@ publish_subscribe(JObj) ->
 -spec publish_subscribe(kz_term:api_terms(), kz_term:ne_binary()) -> 'ok'.
 publish_subscribe(Req, ContentType) ->
     {'ok', Payload} = kz_api:prepare_api_payload(Req, ?SUBSCRIBE_VALUES, fun subscribe/1),
+    lager:debug("PUBLISH SUBSCRIBE"),
     kz_amqp_util:presence_publish(subscribe_routing_key(Req), Payload, ContentType).
 
 -spec subscribe_routing_key(kz_term:api_terms() | kz_term:ne_binary()) -> kz_term:ne_binary().
@@ -202,12 +203,35 @@ update_v(JObj) -> update_v(kz_json:to_proplist(JObj)).
 
 -spec publish_update(kz_term:api_terms()) -> 'ok'.
 publish_update(JObj) ->
+	'ok' = maybe_publish_interaccount_update(JObj),
     publish_update(JObj, ?DEFAULT_CONTENT_TYPE).
 
 -spec publish_update(kz_term:api_terms(), kz_term:ne_binary()) -> 'ok'.
 publish_update(Req, ContentType) ->
     {'ok', Payload} = kz_api:prepare_api_payload(Req, ?UPDATE_VALUES, fun update/1),
     kz_amqp_util:presence_publish(update_routing_key(Req), Payload, ContentType).
+
+
+-spec maybe_publish_interaccount_update(kz_term:api_terms()) -> 'ok'.
+maybe_publish_interaccount_update(Req) ->
+	PresenceID = props:get_value(<<"Presence-ID">>, Req),
+	[FromUser, Realm] = binary:split(PresenceID, <<"@">>),
+	PresenceList = cf_interaccount:presence_list(FromUser, Realm),
+	lager:debug("here: [~s:~s] (~p)",[FromUser, Realm, PresenceList]),
+	publish_interaccount_update(Req, PresenceList).
+	
+-spec publish_interaccount_update(kz_term:api_terms(), list()) -> 'ok'.
+publish_interaccount_update(_Req, []) -> 'ok';
+publish_interaccount_update(Req, [{FromUser, Realm}|PresenceList]) ->
+	NewReq = props:set_values([{<<"Presence-ID">>, <<FromUser/binary, "@", Realm/binary>>}
+							 ,{<<"From">>, <<"sip:", FromUser/binary, "@", Realm/binary>>}
+							 ,{<<"From-User">>, <<FromUser/binary>>}
+							 ,{<<"From-Realm">>, <<Realm/binary>>}
+							 ], Req),
+	lager:debug("InterAccount publish presence: ~p ", [NewReq]),
+	publish_update(NewReq, ?DEFAULT_CONTENT_TYPE),
+	publish_interaccount_update(Req, PresenceList).
+
 
 -spec update_routing_key(kz_term:ne_binary() | kz_term:api_terms()) -> kz_term:ne_binary().
 update_routing_key(Req) when is_list(Req) ->
@@ -253,6 +277,7 @@ dialog_v(JObj) -> dialog_v(kz_json:to_proplist(JObj)).
 
 -spec publish_dialog(kz_term:api_terms()) -> 'ok'.
 publish_dialog(JObj) ->
+	'ok' = maybe_publish_interaccount_dialog(JObj),
     publish_dialog(JObj, ?DEFAULT_CONTENT_TYPE).
 
 -spec publish_dialog(kz_term:api_terms(), kz_term:ne_binary()) -> 'ok'.
@@ -277,6 +302,27 @@ dialog_routing_key(CallId, PresenceID) ->
                    ,"."
                    ,kz_amqp_util:encode(CallId)
                    ]).
+                   
+-spec maybe_publish_interaccount_dialog(kz_term:api_terms()) -> 'ok'.
+maybe_publish_interaccount_dialog(Req) ->
+	lager:debug("Goat presence: ~p",[Req]),
+	PresenceID = props:get_value(<<"Presence-ID">>, Req),
+	[FromUser, Realm] = binary:split(PresenceID, <<"@">>),
+	lager:debug("here: [~s:~s]",[FromUser, Realm]),
+	PresenceList = cf_interaccount:presence_list(FromUser, Realm),
+	publish_interaccount_dialog(Req, PresenceList).
+	
+-spec publish_interaccount_dialog(kz_term:api_terms(), list()) -> 'ok'.
+publish_interaccount_dialog(_Req, []) -> 'ok';
+publish_interaccount_dialog(Req, [{FromUser, Realm}|PresenceList]) ->
+	NewReq = props:set_values([{<<"Presence-ID">>, <<FromUser/binary, "@", Realm/binary>>}
+							 ,{<<"From">>, <<"sip:", FromUser/binary, "@", Realm/binary>>}
+							 ,{<<"From-User">>, <<FromUser/binary>>}
+							 ,{<<"From-Realm">>, <<Realm/binary>>}
+							 ], Req),
+	lager:debug("InterAccount publish dialog: ~p ", [NewReq]),
+	publish_dialog(NewReq, ?DEFAULT_CONTENT_TYPE),
+	publish_interaccount_dialog(Req, PresenceList).
 
 %%------------------------------------------------------------------------------
 %% @doc

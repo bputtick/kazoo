@@ -334,9 +334,19 @@ post(Context) ->
 
 -spec post(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
 post(Context, Extension) ->
-    _ = collect_report(Context, Extension),
+    %_ = collect_report(Context, Extension),
+    ReqData = cb_context:req_data(Context),
+    post_extension(Context, kz_json:get_value(<<"action">>, ReqData), Extension).
+
+
+-spec post_extension(cb_context:context(), kz_json:object(), kz_term:ne_binary()) -> cb_context:context().
+post_extension(Context, <<"reset">>, Extension) ->
     publish_presence_reset(Context, Extension),
-    crossbar_util:response_202(<<"reset command sent for extension ", Extension/binary>>, Context).
+    crossbar_util:response_202(<<"reset command sent for extension ", Extension/binary>>, Context);
+post_extension(Context, <<"set">>, Extension) ->
+    State = kz_json:get_value(<<"state">>, cb_context:req_data(Context)),
+	publish_presence_update(Context, Extension, State),
+    crossbar_util:response_202(<<"command sent">>, Context).
 
 -spec post_things(cb_context:context(), kz_json:object() | kz_json:objects(), kz_term:ne_binary()) ->
                          cb_context:context().

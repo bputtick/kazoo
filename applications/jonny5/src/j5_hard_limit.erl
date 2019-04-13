@@ -16,8 +16,9 @@
 %%------------------------------------------------------------------------------
 -spec authorize(j5_request:request(), j5_limits:limits()) -> j5_request:request().
 authorize(Request, Limits) ->
+    lager:debug("authorizing hard_limits"),
     case calls_at_limit(Limits)
-        orelse resource_consumption_at_limit(Limits)
+        orelse resource_consumption_at_limit(Limits, Request)
     of
         'true' -> j5_request:deny(<<"hard_limit">>, Request, Limits);
         'false' -> Request
@@ -38,16 +39,25 @@ reconcile_cdr(_, _) -> 'ok'.
 calls_at_limit(Limits) ->
     Limit = j5_limits:calls(Limits),
     Used  = j5_channels:total_calls(j5_limits:account_id(Limits)),
+    lager:debug("calls_limit ~p:~p",[Limit,Used]),
     should_deny(Limit, Used).
 
 %%------------------------------------------------------------------------------
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec resource_consumption_at_limit(j5_limits:limits()) -> boolean().
-resource_consumption_at_limit(Limits) ->
+-spec resource_consumption_at_limit(j5_limits:limits(), j5_request:request()) -> boolean().
+resource_consumption_at_limit(Limits, Request) ->
+    AccountBilling = j5_request:account_billing(Request),
+    Increment = case  AccountBilling =/= 'undefined' 
+            andalso AccountBilling =/= <<"limits_disabled">> 
+    of
+        'true' -> 1;
+	'false' -> 0
+    end,
     Limit = j5_limits:resource_consuming_calls(Limits),
-    Used  = j5_channels:resource_consuming(j5_limits:account_id(Limits)),
+    Used  = j5_channels:resource_consuming(j5_limits:account_id(Limits)) + Increment,
+    lager:debug("resource_consumption_limit ~p:~p (~p)",[Limit,Used,AccountBilling]),
     should_deny(Limit, Used).
 
 %%------------------------------------------------------------------------------

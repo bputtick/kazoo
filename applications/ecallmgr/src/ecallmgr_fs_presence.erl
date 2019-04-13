@@ -147,7 +147,9 @@ handle_presence_event(BindingEvent, UUID, FSProps, Node, Options) ->
 
 -spec process_specific_event(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:api_binary(), kz_term:proplist(), atom()) -> any().
 process_specific_event(Event, Event, UUID, Props, Node) ->
+	lager:debug("Processing event: ~s (~p)",[Event, Props]),
     maybe_build_presence_event(Node, UUID, Props).
+    
 
 -spec maybe_build_presence_event(atom(), kz_term:api_binary(), kz_term:proplist()) -> any().
 maybe_build_presence_event(Node, UUID, Props) ->
@@ -155,8 +157,10 @@ maybe_build_presence_event(Node, UUID, Props) ->
                ,fun check_publish_state/3
                ],
     case lists:all(fun(F) -> F(Node, UUID, Props) end, Routines) of
-        'true' -> build_presence_event(Node, UUID, Props);
-        'false' -> 'ok'
+        'true' ->
+	    	%_ = maybe_build_interaccount_presence(Node, UUID, Props),
+			build_presence_event(Node, UUID, Props);
+        'false' -> lager:debug("maybe_build_presence_event: false"), 'ok'
     end.
 
 -spec check_proto(atom(), kz_term:api_binary(), kz_term:proplist()) -> boolean().
@@ -217,6 +221,7 @@ expires(<<"terminated">>) -> 20.
 
 -spec build_presence_event(atom(), kz_term:api_binary(), kz_term:proplist()) -> any().
 build_presence_event(_Node, UUID, Props) ->
+	lager:debug("build presence event with props: ~p", [Props]),
     ToTag = kzd_freeswitch:to_tag(Props),
     FromTag = kzd_freeswitch:from_tag(Props),
 
@@ -254,6 +259,7 @@ build_presence_event(_Node, UUID, Props) ->
                 ,{<<"Event-Package">>, <<"dialog">>}
                  | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
                 ]),
+
     lager:debug("sending presence ~s to ~s/~s in realm ~s", [State, FromUser, ToUser, Realm]),
     _ = maybe_delay(State),
     kz_amqp_worker:cast(Payload, fun kapi_presence:publish_dialog/1).
@@ -261,6 +267,22 @@ build_presence_event(_Node, UUID, Props) ->
 maybe_delay(<<"terminated">>) ->
     timer:sleep(?MILLISECONDS_IN_SECOND);
 maybe_delay(_) -> 'ok'.
+
+%-spec maybe_build_interaccount_presence(atom(), kz_term:api_binary(), kz_term:proplist()) -> any().
+%maybe_build_interaccount_presence(Node, UUID, Props) ->
+%	{FromUser, Realm} = get_user_realm(Props),
+%	PresenceList = cf_interaccount:presence_list(FromUser, Realm),
+%	lager:debug("here: [~s:~s] (~p)",[FromUser, Realm, PresenceList]),
+%	build_interaccount_presence(Node, UUID, Props, PresenceList).
+	
+%-spec build_interaccount_presence(atom(), kz_term:api_binary(), kz_term:proplist(), list()) -> any().
+%build_interaccount_presence(_Node, _UUID, _Props, []) -> 'ok';
+%build_interaccount_presence(Node, UUID, Props, [{FromUser, Realm}|PresenceList]) ->
+%	build_presence_event(Node, UUID, props:set_value(<<"from">>, <<FromUser/binary, "@", Realm/binary>>, Props)),
+%	build_interaccount_presence(Node, UUID, Props, PresenceList).
+	
+
+
 
 -spec direction(kz_term:proplist()) -> kz_term:ne_binary().
 direction(Props) ->

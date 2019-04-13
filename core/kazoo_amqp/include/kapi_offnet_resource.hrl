@@ -26,6 +26,7 @@
 -define(KEY_FLAGS, <<"Flags">>).
 -define(KEY_FORCE_FAX, <<"Force-Fax">>).
 -define(KEY_FORCE_OUTBOUND, <<"Force-Outbound">>).
+-define(KEY_FORCE_INTERACCOUNT, <<"Force-Interaccount">>).
 -define(KEY_FORMAT_FROM_URI, <<"Format-From-URI">>).
 -define(KEY_FROM_URI_REALM, <<"From-URI-Realm">>).
 -define(KEY_GROUP_ID, <<"Group-ID">>).

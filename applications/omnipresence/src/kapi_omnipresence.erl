@@ -82,6 +82,7 @@ publish_subscribe(JObj) ->
 -spec publish_subscribe(kz_term:api_terms(), binary()) -> 'ok'.
 publish_subscribe(Req, ContentType) ->
     {'ok', Payload} = kz_api:prepare_api_payload(Req, ?SUBSCRIBE_VALUES, fun subscribe/1),
+    lager:debug("publish subscription: (~p)",[Payload]),
     kz_amqp_util:basic_publish(?OMNIPRESENCE_EXCHANGE, <<>>, Payload, ContentType).
 
 %%------------------------------------------------------------------------------

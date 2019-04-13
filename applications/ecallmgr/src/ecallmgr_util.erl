@@ -224,6 +224,7 @@ get_sip_to(Props, <<"outbound">>) ->
     case props:get_value(<<"Channel-Presence-ID">>, Props) of
         'undefined' ->
             Number = props:get_first_defined([<<"Other-Leg-Callee-ID-Number">>
+                                             ,<<"Other-Leg-Destination-Number">>
                                              ,<<"variable_sip_to_user">>
                                              ]
                                             ,Props

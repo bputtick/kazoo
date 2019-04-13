@@ -68,6 +68,7 @@
                  ,rate_description :: kz_term:api_binary() | '_'
                  ,rate_id :: kz_term:api_binary() | '_'
                  ,base_cost :: kz_term:api_binary() | '_'
+                 ,rateable = 'false' :: boolean() | '_'
                  }).
 
 -type channel() :: #channel{}.
@@ -178,6 +179,7 @@ resource_consuming(AccountId) ->
                  ,[{{'$2', '$3'}}]
                  }
                 ],
+    lager:debug("Tab: ~p",[ets:tab2list(?TAB)]),
     count_unique_calls(ets:select(?TAB, MatchSpec)).
 
 -spec inbound_flat_rate(kz_term:ne_binary()) -> non_neg_integer().
@@ -518,6 +520,7 @@ handle_cast({'rate_resp', JObj}, State) ->
               ,{#channel.rate_description, kz_json:get_value(<<"Rate-Description">>, JObj)}
               ,{#channel.rate_id, kz_json:get_value(<<"Rate-ID">>, JObj)}
               ,{#channel.base_cost, kz_json:get_value(<<"Base-Cost">>, JObj)}
+              ,{#channel.rateable, 'true'}
               ]
              ),
     CallId = kz_json:get_value(<<"Call-ID">>, JObj),

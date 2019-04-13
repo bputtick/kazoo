@@ -41,8 +41,10 @@ reconcile_cdr(Request, Limits) ->
 
 -spec reconcile_call_cost(j5_request:request(), j5_limits:limits()) -> 'ok'.
 reconcile_call_cost(Request, Limits) ->
+	ReconcileZero = kapps_config:get_is_true(?APP_NAME, <<"reconcile_zero_call_costs">>, 'false'),
     case j5_request:calculate_call(Request) of
-        {_, 0} -> 'ok';
+        {0, 0} -> 'ok';
+        {_, 0} when not ReconcileZero -> 'ok';
         {Seconds, Amount} ->
             create_ledger_usage(Seconds, Amount, Request, Limits)
     end.
@@ -155,5 +157,6 @@ metadata(Request) ->
       ,{<<"resource_type">>, j5_request:resource_type(Request)}
       ,{<<"account_trunk_usage">>, j5_request:account_trunk_usage(Request)}
       ,{<<"reseller_trunk_usage">>, j5_request:reseller_trunk_usage(Request)}
+      ,{<<"billing_seconds">>, j5_request:billing_seconds(Request)}
       ,{<<"rate">>, RateObj}
       ]).

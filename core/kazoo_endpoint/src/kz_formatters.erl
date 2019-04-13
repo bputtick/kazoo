@@ -55,7 +55,7 @@ maybe_set_invite_format(JObj, SubJObj) ->
 format_request(JObj, MetaFormatters, Direction) ->
     JObjKeys = request_keys(JObj),
     kz_json:foldl(fun(MetaKey, Formatters, AccJObj) ->
-                          lager:debug("processing ~s ~p", [MetaKey, Formatters]),
+                          lager:debug("processing ~s ~p ~p ~p [~s]", [MetaKey, Formatters, AccJObj, JObjKeys, Direction]),
                           maybe_apply_formatters_fold(AccJObj
                                                      ,JObjKeys
                                                      ,MetaKey

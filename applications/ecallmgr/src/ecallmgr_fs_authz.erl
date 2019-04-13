@@ -324,6 +324,7 @@ maybe_kill_unrated_channel(Props, Node) ->
 -spec authz_default(kzd_freeswitch:data(), kz_term:ne_binary(), atom()) -> {'ok', kz_term:ne_binary()} | boolean().
 %% TODO: fix use of authz_default
 authz_default(Props, CallId, Node) ->
+	lager:debug("AUTH DEFAULT: ~s : ~s", [kapps_config:get_ne_binary(?APP_NAME, <<"authz_default_action">>, <<"deny">>), kapps_config:get_boolean(?APP_NAME, <<"authz_dry_run">>, 'false')]),
     case kapps_config:get_ne_binary(?APP_NAME, <<"authz_default_action">>, <<"deny">>) =:= <<"deny">>
         andalso kapps_config:get_boolean(?APP_NAME, <<"authz_dry_run">>, 'false') =/= 'false'
     of

@@ -117,6 +117,7 @@
         ,?KEY_FLAGS
         ,?KEY_FORCE_FAX
         ,?KEY_FORCE_OUTBOUND
+        ,?KEY_FORCE_INTERACCOUNT
         ,?KEY_FORMAT_FROM_URI
         ,?KEY_FROM_URI_REALM
         ,?KEY_GROUP_ID

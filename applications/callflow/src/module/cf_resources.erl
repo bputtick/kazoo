@@ -111,6 +111,7 @@ build_offnet_request(Data, Call) ->
     {AssertedNumber, AssertedName, AssertedRealm} =
         get_asserted_identity(Data, Call),
     {CIDNumber, CIDName} = get_caller_id(Data, Call),
+    lager:debug("Force Interaccount ~s",[kz_json:get_ne_binary_value(<<"force_interaccount">>, Data)]),
     PrivacyFlags = get_privacy_flags(Call),
     props:filter_undefined(
       [{?KEY_ACCOUNT_ID, kapps_call:account_id(Call)}
@@ -129,12 +130,14 @@ build_offnet_request(Data, Call) ->
       ,{?KEY_E_CALLER_ID_NUMBER, ECIDNum}
       ,{?KEY_FLAGS, get_flags(Data, Call)}
       ,{?KEY_FORMAT_FROM_URI, kz_json:is_true(<<"format_from_uri">>, Data)}
+      ,{?KEY_FORCE_INTERACCOUNT, kz_json:get_ne_binary_value(<<"force_interaccount">>, Data)}
       ,{?KEY_FROM_URI_REALM, get_from_uri_realm(Data, Call)}
       ,{?KEY_HUNT_ACCOUNT_ID, get_hunt_account_id(Data, Call)}
       ,{?KEY_IGNORE_EARLY_MEDIA, get_ignore_early_media(Data)}
       ,{?KEY_INCEPTION, get_inception(Call)}
       ,{?KEY_MEDIA, kz_json:get_first_defined([<<"media">>, <<"Media">>], Data)}
       ,{?KEY_MSG_ID, kz_binary:rand_hex(6)}
+      ,{?KEY_OUTBOUND_CALLEE_ID_NAME, kz_json:get_ne_binary_value(<<"callee_name">>, Data)}
       ,{?KEY_OUTBOUND_CALLER_ID_NAME, CIDName}
       ,{?KEY_OUTBOUND_CALLER_ID_NUMBER, CIDNumber}
       ,{?KEY_PRESENCE_ID, maybe_presence_id(Call)}
@@ -300,8 +303,8 @@ get_asserted_identity(_Data, Call) ->
 maybe_default_asserted_identity(Endpoint, Call) ->
     CallerId = kzd_devices:caller_id(Endpoint),
     case kapps_config:get_is_true(?RES_CONFIG_CAT, <<"default_asserted_identity">>, 'false') of
-        'false' -> {'undefined', 'undefined', 'undefined'};
-        'true' ->
+        'false' -> lager:debug("default_asserted_identity is false"),{'undefined', 'undefined', 'undefined'};
+        'true' -> lager:debug("default_asserted_identity is true: ~p",[Endpoint]),
             {kzd_caller_id:external_number(CallerId)
             ,get_asserted_default_name(CallerId, Call)
             ,kapps_call:account_realm(Call)
