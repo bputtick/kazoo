@@ -50,7 +50,7 @@
             "support_level": "supported",
             "type": "integer"
         },
-        "max_postpay_ammount": {
+        "max_postpay_amount": {
             "default": 0,
             "description": "A hard limit for the postpay before limiting calls per account by default",
             "minimum": 0,
@@ -64,7 +64,7 @@
             "support_level": "supported",
             "type": "integer"
         },
-        "reserve_ammount": {
+        "reserve_amount": {
             "default": 0,
             "description": "The amount to hold in reserve per account by default",
             "minimum": 0,

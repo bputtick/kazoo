@@ -537,6 +537,7 @@ channel_vars_handle_asserted_identity({Props, Results}=Acc) ->
     CCVs = props:get_value(<<"Custom-Channel-Vars">>, Props, kz_json:new()),
     DefaultRealm = kz_json:get_ne_binary_value(<<"Realm">>, CCVs),
     Realm = props:get_ne_binary_value(<<"Asserted-Identity-Realm">>, Props, DefaultRealm),
+    lager:debug("Asserted Props: ~p",[Props]),
     lager:debug("Asserted Header: ~p",[[Name, Number, Realm]]),
     case create_asserted_identity_header(Name, Number, Realm) of
         'undefined' -> Acc;

@@ -122,6 +122,7 @@
                         ,has_qs_filter => boolean()
                         ,is_chunked => boolean()
                         ,last_key => last_key()
+                        ,last_docid => kazoo_data:docid()
                         ,mapper => mapper_fun()
                         ,page_size => pos_integer()
                         ,previous_chunk_length => non_neg_integer()
@@ -661,21 +662,24 @@ next_chunk(#{options := #{databases := []}
 %%            and the last key has been found.
 next_chunk(#{options := #{page_size := PageSize}
             ,last_key := LastKey
+            ,last_docid := LastDocId
             ,total_queried := TotalQueried
             ,previous_chunk_length := PrevLength
             }=ChunkMap)
   when is_integer(PageSize)
        andalso PageSize > 0
        andalso TotalQueried + PrevLength =:= PageSize
-       andalso LastKey =/= 'undefined' ->
+       andalso LastKey =/= 'undefined'
+       andalso LastDocId =/= 'undefined' ->
     lager:debug("(chunked) page size exhausted: ~b", [PageSize]),
     ChunkMap#{total_queried => TotalQueried + PrevLength
              ,chunking_finished => 'true'
              };
 %% query next chunk from same db when query is chunked
 %% Condition: the current last_key has been found and it's not equal to the previous last_key
-next_chunk(#{options := #{last_key := OldLastKey}=LoadMap
+next_chunk(#{options := #{last_key := _OldLastKey, last_docid := OldLastDocId}=LoadMap
             ,last_key := LastKey
+            ,last_docid := LastDocId
             ,total_queried := TotalQueried
             ,previous_chunk_length := PrevLength
             ,context := Context
@@ -686,6 +690,7 @@ next_chunk(#{options := #{last_key := OldLastKey}=LoadMap
     chunk_map_roll_in(ChunkMap, get_results(LoadMap#{total_queried => TotalQueried + PrevLength
                                                     ,context => Context
                                                     ,last_key => LastKey
+                                                    ,last_docid => LastDocId
                                                     ,previous_chunk_length => 0
                                                     }));
 %% only one database is left and it does not have any more result give, so request is completed.
@@ -698,7 +703,7 @@ next_chunk(#{options := #{databases := [_]}
              ,chunking_finished => 'true'
              };
 %% just query next_db
-next_chunk(#{options := #{databases := [_|RestDbs], last_key := LastKey}=LoadMap
+next_chunk(#{options := #{databases := [_|RestDbs], last_key := LastKey, last_docid := LastDocId}=LoadMap
             ,total_queried := TotalQueried
             ,previous_chunk_length := PrevLength
             ,context := Context
@@ -708,6 +713,7 @@ next_chunk(#{options := #{databases := [_|RestDbs], last_key := LastKey}=LoadMap
                                                     ,databases => RestDbs
                                                     ,context => Context
                                                     ,last_key => LastKey
+                                                    ,last_docid => LastDocId
                                                     ,previous_chunk_length => 0
                                                     }));
 %% starting chunked query
@@ -724,19 +730,21 @@ next_chunk(#{context := Context}=ChunkMap) ->
     end.
 
 -spec chunk_map_roll_in(map(), load_params()) -> map().
-chunk_map_roll_in(#{last_key := OldLastKey}=ChunkMap
+chunk_map_roll_in(#{last_key := OldLastKey, last_docid := OldLastDocId}=ChunkMap
                  ,#{start_key := StartKey
                    ,last_key := LastKey
+                   ,last_docid := LastDocId
                    ,total_queried := TotalQueried
                    ,previous_chunk_length := PrevLength
                    ,context := Context
                    }=LoadMap) ->
     ChunkMap#{start_key => StartKey
              ,last_key => LastKey
+             ,last_docid => LastDocId
              ,total_queried => TotalQueried
              ,previous_chunk_length => PrevLength
              ,context => Context
-             ,options => maps:remove(context, LoadMap#{last_key => OldLastKey}) %% to be checked in the next iteration
+             ,options => maps:remove(context, LoadMap#{last_key => OldLastKey, last_docid => OldLastDocId}) %% to be checked in the next iteration
              }.
 
 %%------------------------------------------------------------------------------
@@ -826,36 +834,38 @@ get_results(#{databases := [Db|RestDbs]=Dbs
 %%------------------------------------------------------------------------------
 -spec handle_query_result(load_params(), kz_term:ne_binaries(), kz_json:objects(), kz_term:api_pos_integer()) -> load_params().
 handle_query_result(#{last_key := LastKey
+					 ,last_docid := LastDocId
                      ,mapper := Mapper
                      ,context := Context
                      }=LoadMap, Dbs, Results, Limit) ->
     ResultsLength = erlang:length(Results),
 
-    {NewLastKey, JObjs} = last_key(LastKey, Results, Limit, ResultsLength),
+    {NewLastKey, NewLastDocId, JObjs} = last_key(LastKey, LastDocId, Results, Limit, ResultsLength),
 
     case apply_filter(Mapper, JObjs) of
         {'error', Reason} ->
             LoadMap#{context => cb_context:add_system_error('datastore_fault', kz_term:to_binary(Reason), Context)};
         FilteredJObjs ->
             FilteredLength = length(FilteredJObjs),
-            lager:debug("db_returned: ~b passed_filter: ~p next_start_key: ~p", [ResultsLength, FilteredLength, NewLastKey]),
-            handle_query_result(LoadMap, Dbs, FilteredJObjs, FilteredLength, NewLastKey)
+            lager:debug("db_returned: ~b passed_filter: ~p next_start_key: ~p next_docid: ~p", [ResultsLength, FilteredLength, NewLastKey, NewLastDocId]),
+            handle_query_result(LoadMap, Dbs, FilteredJObjs, FilteredLength, NewLastKey, NewLastDocId)
     end.
 
--spec handle_query_result(load_params(), kz_term:ne_binaries(), kz_json:objects(), non_neg_integer(), last_key()) -> load_params().
+-spec handle_query_result(load_params(), kz_term:ne_binaries(), kz_json:objects(), non_neg_integer(), last_key(), kazoo_data:docid()) -> load_params().
 handle_query_result(#{is_chunked := 'true'
                      ,context := Context
-                     }=LoadMap, [Db|_], FilteredJObjs, FilteredLength, NewLastKey) ->
+                     }=LoadMap, [Db|_], FilteredJObjs, FilteredLength, NewLastKey, NewLastDocId) ->
     Setters = [{fun cb_context:set_resp_data/2, FilteredJObjs}
               ,{fun cb_context:set_account_db/2, Db}
               ],
     Context1 = cb_context:setters(Context, Setters),
     LoadMap#{last_key => NewLastKey
+    		,last_docid => NewLastDocId
             ,context => Context1
             ,previous_chunk_length => FilteredLength
             };
-handle_query_result(LoadMap, [_|RestDbs], FilteredJObjs, FilteredLength, NewLastKey) ->
-    case check_page_size_and_length(LoadMap, FilteredLength, FilteredJObjs, NewLastKey) of
+handle_query_result(LoadMap, [_|RestDbs], FilteredJObjs, FilteredLength, NewLastKey, NewLastDocId) ->
+    case check_page_size_and_length(LoadMap, FilteredLength, FilteredJObjs, NewLastKey, NewLastDocId) of
         {'exhausted', LoadMap2} -> LoadMap2;
         {'next_db', LoadMap2} -> get_results(LoadMap2#{databases => RestDbs})
     end.
@@ -864,7 +874,7 @@ handle_query_result(LoadMap, [_|RestDbs], FilteredJObjs, FilteredLength, NewLast
 %% @doc Check page size is exhausted or not.
 %% @end
 %%------------------------------------------------------------------------------
--spec check_page_size_and_length(load_params(), non_neg_integer(), kz_json:objects(), last_key()) ->
+-spec check_page_size_and_length(load_params(), non_neg_integer(), kz_json:objects(), last_key(), kazoo_data:docid()) ->
                                         {'exhausted' | 'next_db', load_params()}.
 %% page_size is exhausted when query is limited by page_size
 %% Condition: page_size = total_queried + current_db_results
@@ -872,7 +882,7 @@ handle_query_result(LoadMap, [_|RestDbs], FilteredJObjs, FilteredLength, NewLast
 check_page_size_and_length(#{page_size := PageSize
                             ,queried_jobjs := QueriedJObjs
                             ,total_queried := TotalQueried
-                            }=LoadMap, Length, FilteredJObjs, LastKey)
+                            }=LoadMap, Length, FilteredJObjs, LastKey, LastDocId)
   when is_integer(PageSize)
        andalso PageSize > 0
        andalso TotalQueried + Length == PageSize
@@ -881,15 +891,17 @@ check_page_size_and_length(#{page_size := PageSize
     {'exhausted', LoadMap#{total_queried => TotalQueried + Length
                           ,queried_jobjs => QueriedJObjs ++ FilteredJObjs
                           ,last_key => LastKey
+                          ,last_docid => LastDocId
                           }
     };
 %% just query next_db
 check_page_size_and_length(#{total_queried := TotalQueried
                             ,queried_jobjs := QueriedJObjs
-                            }=LoadMap, Length, FilteredJObjs, LastKey) ->
+                            }=LoadMap, Length, FilteredJObjs, LastKey, LastDocId) ->
     {'next_db', LoadMap#{total_queried => TotalQueried + Length
                         ,queried_jobjs => QueriedJObjs ++ FilteredJObjs
                         ,last_key => LastKey
+                        ,last_docid => LastDocId
                         }
     }.
 
@@ -972,17 +984,17 @@ filter_foldl(Mapper, [JObj | JObjs], Acc) ->
 %% exhausted yet.
 %% @end
 %%------------------------------------------------------------------------------
--spec last_key(last_key(), kz_json:objects(), non_neg_integer() | 'undefined', non_neg_integer()) ->
+-spec last_key(last_key(), kazoo_data:docid(), kz_json:objects(), non_neg_integer() | 'undefined', non_neg_integer()) ->
                       {last_key(), kz_json:objects()}.
-last_key(LastKey, [], _, _) ->
-    {LastKey, []};
-last_key(LastKey, JObjs, 'undefined', _) ->
-    {LastKey, lists:reverse(JObjs)};
-last_key(LastKey, JObjs, Limit, Returned) when Returned < Limit ->
-    {LastKey, lists:reverse(JObjs)};
-last_key(_LastKey, JObjs, Limit, Returned) when Returned == Limit ->
+last_key(LastKey, LastDocId, [], _, _) ->
+    {LastKey, LastDocId, []};
+last_key(LastKey, LastDocId, JObjs, 'undefined', _) ->
+    {LastKey, LastDocId, lists:reverse(JObjs)};
+last_key(LastKey, LastDocId, JObjs, Limit, Returned) when Returned < Limit ->
+    {LastKey, LastDocId, lists:reverse(JObjs)};
+last_key(_LastKey, _LastDocId, JObjs, Limit, Returned) when Returned == Limit ->
     [Last|JObjs1] = lists:reverse(JObjs),
-    {kz_json:get_value(<<"key">>, Last), JObjs1}.
+    {kz_json:get_value(<<"key">>, Last), kz_json:get_value(<<"id">>, Last), JObjs1}.
 
 %%------------------------------------------------------------------------------
 %% @doc If the last key is known set as the `next_start_key' in the
@@ -1026,6 +1038,7 @@ build_general_load_params(Context, View, Options) ->
           ,{'direction', Direction}
           ,{'is_chunked', is_chunked(Context, Options)}
           ,{'last_key', 'undefined'}
+          ,{'last_docid', 'undefined'}
           ,{'page_size', get_page_size(Context, Options)}
           ,{'queried_jobjs', []}
           ,{'should_paginate', cb_context:should_paginate(Context)}

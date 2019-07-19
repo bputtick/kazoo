@@ -1034,6 +1034,7 @@ build_sip_channel(#bridge_endpoint{failover=Failover}=Endpoint) ->
                ,fun maybe_set_interface/2
                ,fun maybe_append_channel_vars/2
                ],
+               lager:debug("build sip channel: ep: ~p",[Endpoint]),
     try lists:foldl(fun build_sip_channel_fold/2, Endpoint, Routines) of
         {Channel, _} -> {'ok', Channel}
     catch
