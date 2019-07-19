@@ -21,7 +21,9 @@
 -define(TOTAL, <<"total">>).
 -define(CREDIT, <<"credit">>).
 -define(DEBIT, <<"debit">>).
+-define(SUMMARY, <<"summary">>).
 
+-define(VIEW_BY_ACCOUNT, <<"ledgers/summary_by_account">>).
 -define(VIEW_BY_TIMESTAMP, <<"ledgers/list_by_timestamp">>).
 -define(VIEW_BY_SOURCE, <<"ledgers/list_by_source">>).
 
@@ -66,6 +68,8 @@ allowed_methods(_SourceService) ->
     [?HTTP_GET].
 
 -spec allowed_methods(path_token(), path_token()) -> http_methods().
+allowed_methods(?SUMMARY, _ModbSuffix) ->
+    [?HTTP_GET];
 allowed_methods(_SourceService, _LedgerId) ->
     [?HTTP_GET].
 
@@ -141,20 +145,7 @@ authorize_create(Context) ->
 %%------------------------------------------------------------------------------
 -spec validate(cb_context:context()) -> cb_context:context().
 validate(Context) ->
-    Options = [{'group', 'true'}
-              ,{'group_level', 0}
-              ,{'mapper', crossbar_view:map_value_fun()}
-              ,{'reduce', 'true'}
-              ,{'unchunkable', 'true'}
-              ],
-    Context1 = crossbar_view:load_modb(Context, ?VIEW_BY_TIMESTAMP, Options),
-    case cb_context:resp_status(Context1) of
-        'success' ->
-            Summary = kz_json:sum_jobjs(cb_context:doc(Context1)),
-            cb_context:set_resp_data(Context1, summary_to_dollars(Summary));
-        _ ->
-            Context1
-    end.
+    summary(Context).
 
 -spec validate(cb_context:context(), path_token()) -> cb_context:context().
 validate(Context, ?CREDIT) ->
@@ -168,10 +159,7 @@ validate(Context, ?TOTAL) ->
             crossbar_doc:handle_datamgr_errors(Reason, ?TOTAL, Context);
         {'ok', Units} ->
             JObj = kz_json:from_list(
-                     [{<<"amount">>
-                      ,kz_currency:units_to_dollars(Units)
-                      }
-                     ]
+                     [{<<"amount">>, kz_currency:units_to_dollars(Units)}]
                     ),
             crossbar_doc:handle_json_success(JObj, Context)
     end;
@@ -187,6 +175,14 @@ validate(Context, SourceService) ->
     crossbar_view:load_modb(Context, ?VIEW_BY_SOURCE, ViewOptions).
 
 -spec validate(cb_context:context(), path_token(), path_token()) -> cb_context:context().
+validate(Context, ?SUMMARY, ModbSuffix) ->
+    case kazoo_modb_util:get_modb_suffix(ModbSuffix) of
+        {'undefined', 'undefined'} ->
+            crossbar_util:response_bad_identifier(ModbSuffix, Context);
+        {Year, Month} ->
+            MODB = kazoo_modb:get_modb(cb_context:account_id(Context), Year, Month),
+            build_summary(Context, MODB)
+    end;
 validate(Context, SourceService, Id) ->
     AccountId = cb_context:account_id(Context),
     case kz_ledger:fetch(AccountId, Id) of
@@ -217,6 +213,10 @@ validate_fetch_ledger(Context, SourceService, Ledger) ->
 put(Context, Action) ->
     ReqData = cb_context:req_data(Context),
     AccountId = cb_context:account_id(Context),
+
+    Amount = kz_json:get_number_value(<<"amount">>, ReqData, 0),
+    Units = kz_currency:dollars_to_units(Amount),
+
     Setters =
         props:filter_empty(
           [{fun kz_ledger:set_account/2, AccountId}
@@ -247,17 +247,17 @@ put(Context, Action) ->
           ,{fun kz_ledger:set_metadata/2
            ,kz_json:get_ne_json_value(<<"metadata">>, ReqData, kz_json:new())
            }
-          ,{fun kz_ledger:set_dollar_amount/2
-           ,abs(kz_json:get_integer_value(<<"amount">>, ReqData, 0))
+          ,{fun kz_ledger:set_unit_amount/2
+           ,Units
            }
           ,{fun kz_ledger:set_audit/2
            ,crossbar_services:audit_log(Context)
            }
           ,{fun kz_ledger:set_executor_trigger/2
-           ,<<"crossbar">>
+           ,?APP_NAME
            }
           ,{fun kz_ledger:set_executor_module/2
-           ,kz_term:to_binary(?MODULE)
+           ,<<?MODULE_STRING>>
            }
           ]
          ),
@@ -271,19 +271,93 @@ put(Context, Action) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
+-spec build_summary(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
+build_summary(Context, MODB) ->
+    SummaryContext = summary(Context, [{'databases', [MODB]}
+                                      ,{'range_keymap', 'nil'}
+                                      ]
+                            ),
+    AccountContext = account_summary(Context, MODB),
+    case {cb_context:resp_status(SummaryContext), cb_context:resp_status(AccountContext)} of
+        {'success', 'success'} ->
+            AccountSummary = cb_context:resp_data(AccountContext),
+            JObj = kz_json:from_list([{<<"summary">>, cb_context:resp_data(SummaryContext)}
+                                     ,{<<"breakdown">>, kz_json:values(AccountSummary)}
+                                     ]
+                                    ),
+            cb_context:set_resp_data(AccountContext, JObj);
+        {_, _} -> AccountContext
+    end.
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec fetch_summary(cb_context:context(), kz_term:ne_binary(), kz_term:proplist()) -> cb_context:context().
+fetch_summary(Context, View, Options) ->
+    ViewOptions = [{'group', 'true'}
+                  ,{'reduce', 'true'}
+                  ,{'unchunkable', 'true'}
+                  ,{'no_filter', 'true'}
+                  ,{'should_paginate', 'false'}
+                   | Options
+                  ],
+    Context1 = crossbar_view:load_modb(Context, View, ViewOptions),
+    case cb_context:resp_status(Context1) of
+        'success' ->
+            Summary = kz_json:sum_jobjs(cb_context:doc(Context1)),
+            cb_context:set_resp_data(Context1, summary_to_dollars(Summary));
+        _ -> Context1
+    end.
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec summary(cb_context:context()) -> cb_context:context().
+summary(Context) ->
+    summary(Context, []).
+
+-spec summary(cb_context:context(), kz_term:proplist()) -> cb_context:context().
+summary(Context, Options) ->
+    ViewOptions = [{'group_level', 0}
+                  ,{'mapper', crossbar_view:map_value_fun()}
+                   | Options
+                  ],
+
+    fetch_summary(Context, ?VIEW_BY_TIMESTAMP, ViewOptions).
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec account_summary(cb_context:context(), kz_term:ne_binary()) ->cb_context:context().
+account_summary(Context, MODB) ->
+    Options = [{'databases', [MODB]}
+              ,{'group_level', 2}
+              ,{'mapper', fun normalize_summary_by_account/2}
+              ,{'range_keymap', 'nil'}
+              ],
+    fetch_summary(Context, ?VIEW_BY_ACCOUNT, Options).
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
 -spec summary_to_dollars(kz_json:object()) -> kz_json:object().
 summary_to_dollars(Summary) ->
-    kz_json:expand(
-      kz_json:from_list(
-        [{Path, maybe_convert_units(lists:last(Path), Value)}
-         || {Path, Value} <- kz_json:to_proplist(kz_json:flatten(Summary))
-        ])).
+    ConvertedUnits = [{Paths, maybe_convert_units(lists:last(Paths), Paths, Value)}
+                      || {Paths, Value} <- kz_json:to_proplist(kz_json:flatten(Summary))
+                     ],
+    kz_json:expand(kz_json:from_list(ConvertedUnits)).
 
--spec maybe_convert_units(kz_term:ne_binary(), kz_currency:units() | T) ->
+-spec maybe_convert_units(kz_term:ne_binary(), kz_json:keys(), kz_currency:units() | T) ->
                                  kz_currency:dollars() | T when T::any().
-maybe_convert_units(<<"amount">>, Units) when is_integer(Units) ->
+maybe_convert_units(<<"amount">>, _, Units) when is_integer(Units) ->
     kz_currency:units_to_dollars(Units);
-maybe_convert_units(_, Value) -> Value.
+maybe_convert_units(_, [_AccountId, <<"total">>], Units) ->
+    kz_currency:units_to_dollars(Units);
+maybe_convert_units(_, _, Value) -> Value.
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -384,3 +458,34 @@ normalize_view_results(_Context, JObj, Acc) ->
 -spec normalize_view_result(kzd_ledgers:doc()) -> kz_json:object().
 normalize_view_result(LedgerJObj) ->
     kz_ledger:public_json(kz_ledger:from_json(LedgerJObj)).
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec normalize_summary_by_account(kz_json:objects(), kz_json:objects()) -> kz_json:objects().
+normalize_summary_by_account(JObj, Acc) ->
+    AccountId = kz_json:get_value(<<"key">>, JObj),
+    Ledger = normalize_ledger_jobj(AccountId, kz_json:get_value(<<"value">>, JObj)),
+    [kz_json:sum_jobjs([Ledger | Acc])].
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec normalize_ledger_jobj(kazoo_data:range_key(), kz_json:object()) -> kz_json:object().
+normalize_ledger_jobj(AccountId, JObj) ->
+    AccountJObj = kz_json:from_list([{<<"id">>, AccountId}
+                                    ,{<<"name">>, kz_json:get_value(<<"account_name">>, JObj)}
+                                    ]
+                                   ),
+    kz_json:from_list(
+      [{AccountId
+       ,kz_json:from_list(
+          [{<<"account">>, AccountJObj}
+          ,{<<"ledgers">>, kz_json:get_value(<<"ledgers">>, JObj)}
+          ,{<<"total">>, kz_json:get_integer_value(<<"total">>, JObj)}
+          ]
+         )
+       }
+      ]).

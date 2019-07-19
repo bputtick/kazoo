@@ -522,7 +522,7 @@ db_exists(Database, ShouldRetry) ->
         'true' -> 'true';
         'false' when ShouldRetry ->
             io:format("db '~s' doesn't exist~n", [Database]),
-            kapps_maintenance:refresh(Database),
+            _ = kapps_maintenance:refresh(Database),
             db_exists(Database, 'false');
         'false' ->
             throw(kz_json:from_list([{<<"error">>, <<"database not ready">>}
@@ -1144,9 +1144,10 @@ read_image(File) ->
                            {'ok', kz_json:object()} |
                            {'invalid_data', kz_term:proplist()}.
 find_metadata(AppPath) ->
-    {'ok', JSON} = file:read_file(filename:join([AppPath, <<"metadata">>, <<"app.json">>])),
-    case kz_json_schema:validate(<<"app">>, kz_doc:public_fields(kz_json:decode(JSON))) of
-        {'ok', _}=OK -> OK;
+    {'ok', Bin} = file:read_file(filename:join([AppPath, <<"metadata">>, <<"app.json">>])),
+    JSON = kz_json:decode(Bin),
+    case kz_json_schema:validate(<<"app">>, kz_doc:public_fields(JSON)) of
+        {'ok', _} -> {'ok', JSON};
         {'error', Errors} ->
             {'invalid_data', [Error || {'data_invalid', _, Error, _, _} <- Errors]}
     end.

@@ -172,6 +172,7 @@
                  ,account_db :: kz_term:api_ne_binary()
                  ,media_extension :: kz_term:api_ne_binary()
                  ,forward_type :: kz_term:api_ne_binary()
+                 ,oldest_message_first = 'false' :: boolean()
                  }).
 -type mailbox() :: #mailbox{}.
 
@@ -532,42 +533,44 @@ play_instructions(#mailbox{skip_instructions='false'}, Call) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec record_voicemail(kz_term:ne_binary(), mailbox(), kapps_call:call()) -> 'ok'.
-record_voicemail(AttachmentName, #mailbox{max_message_length=MaxMessageLength
-                                         ,media_extension=Ext
-                                         }=Box, Call) ->
+record_voicemail(AttachmentName, #mailbox{max_message_length=MaxMessageLength}=Box, Call) ->
     Tone = kz_json:from_list([{<<"Frequencies">>, [<<"440">>]}
                              ,{<<"Duration-ON">>, <<"500">>}
                              ,{<<"Duration-OFF">>, <<"100">>}
                              ]),
     kapps_call_command:tones([Tone], Call),
     lager:info("composing new voicemail to ~s", [AttachmentName]),
-    Routines = [{fun kapps_call:set_message_left/2, 'true'}],
     case kapps_call_command:b_record(AttachmentName, ?ANY_DIGIT, kz_term:to_binary(MaxMessageLength), Call) of
         {'ok', Msg} ->
-            Length = kz_json:get_integer_value(<<"Length">>, Msg, 0),
-            case kz_call_event:hangup_cause(Msg) =:= 'undefined'
-                andalso review_recording(AttachmentName, 'true', Box, Call)
-            of
-                'false' ->
-                    _ = cf_exe:update_call(Call, Routines),
-                    new_message(AttachmentName, Length, Box, Call);
-                {'ok', 'record'} ->
-                    record_voicemail(tmp_file(Ext), Box, Call);
-                {'ok', _Selection} ->
-                    _ = cf_exe:update_call(Call, Routines),
-                    cf_util:start_task(fun new_message/4, [AttachmentName, Length, Box], Call),
-                    _ = kapps_call_command:prompt(<<"vm-saved">>, Call),
-                    _ = kapps_call_command:prompt(<<"vm-thank_you">>, Call),
-                    'ok';
-                {'branch', Flow} ->
-                    _ = cf_exe:update_call(Call, Routines),
-                    _ = new_message(AttachmentName, Length, Box, Call),
-                    _ = kapps_call_command:prompt(<<"vm-saved">>, Call),
-                    {'branch', Flow}
-            end;
+            maybe_review(AttachmentName, Box, Call, Msg, kapps_call_command:b_channel_status(Call));
         {'error', _R} ->
             lager:info("error while attempting to record a new message: ~p", [_R])
     end.
+
+maybe_review(AttachmentName, #mailbox{media_extension=Ext}=Box, Call, Msg, {'ok', _StatusJObj}) ->
+    Routines = [{fun kapps_call:set_message_left/2, 'true'}],
+    Length = kz_json:get_integer_value(<<"Length">>, Msg, 0),
+
+    case review_recording(AttachmentName, 'true', Box, Call) of
+        {'ok', 'record'} ->
+            record_voicemail(tmp_file(Ext), Box, Call);
+        {'ok', _Selection} ->
+            _ = cf_exe:update_call(Call, Routines),
+            cf_util:start_task(fun new_message/4, [AttachmentName, Length, Box], Call),
+            _ = kapps_call_command:prompt(<<"vm-saved">>, Call),
+            _ = kapps_call_command:prompt(<<"vm-thank_you">>, Call),
+            'ok';
+        {'branch', Flow} ->
+            _ = cf_exe:update_call(Call, Routines),
+            _ = new_message(AttachmentName, Length, Box, Call),
+            _ = kapps_call_command:prompt(<<"vm-saved">>, Call),
+            {'branch', Flow}
+    end;
+maybe_review(AttachmentName, Box, Call, Msg, {'error', _E}) ->
+    Routines = [{fun kapps_call:set_message_left/2, 'true'}],
+    _ = cf_exe:update_call(Call, Routines),
+    Length = kz_json:get_integer_value(<<"Length">>, Msg, 0),
+    new_message(AttachmentName, Length, Box, Call).
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -828,6 +831,9 @@ message_prompt(Messages, Message, Count, #mailbox{skip_envelope='true'}) ->
 %%------------------------------------------------------------------------------
 -spec play_messages(kz_json:objects(), non_neg_integer(), mailbox(), kapps_call:call()) ->
                            'ok' | 'complete'.
+play_messages(Messages, Count, #mailbox{oldest_message_first='true'}=Box, Call) ->
+    MsgList = lists:reverse(Messages),
+    play_messages(MsgList, [], Count, Box, Call);
 play_messages(Messages, Count, Box, Call) ->
     play_messages(Messages, [], Count, Box, Call).
 
@@ -963,9 +969,7 @@ compose_forward_message(Message, SrcBoxId, #mailbox{media_extension=Ext}=DestBox
     end.
 
 -spec record_forward(kz_term:ne_binary(), kz_json:object(), kz_term:ne_binary(), mailbox(), kapps_call:call()) -> 'ok'.
-record_forward(AttachmentName, Message, SrcBoxId, #mailbox{media_extension=Ext
-                                                          ,max_message_length=MaxMessageLength
-                                                          }=DestBox, Call) ->
+record_forward(AttachmentName, Message, SrcBoxId, #mailbox{max_message_length=MaxMessageLength}=DestBox, Call) ->
     Tone = kz_json:from_list([{<<"Frequencies">>, [<<"440">>]}
                              ,{<<"Duration-ON">>, <<"500">>}
                              ,{<<"Duration-OFF">>, <<"100">>}
@@ -974,23 +978,27 @@ record_forward(AttachmentName, Message, SrcBoxId, #mailbox{media_extension=Ext
     kapps_call_command:tones([Tone], Call),
     case kapps_call_command:b_record(AttachmentName, ?ANY_DIGIT, kz_term:to_binary(MaxMessageLength), Call) of
         {'ok', Msg} ->
-            Length = kz_json:get_integer_value(<<"Length">>, Msg, 0),
-            case kz_call_event:hangup_cause(Msg) =:= 'undefined'
-                andalso review_recording(AttachmentName, 'false', DestBox, Call)
-            of
-                'false' ->
-                    forward_message(AttachmentName, Length, Message, SrcBoxId, DestBox, Call);
-                {'ok', 'record'} ->
-                    record_forward(tmp_file(Ext), Message, SrcBoxId, DestBox, Call);
-                {'ok', _Selection} ->
-                    cf_util:start_task(fun forward_message/6
-                                      ,[AttachmentName, Length, Message, SrcBoxId, DestBox]
-                                      , Call
-                                      )
-            end;
+            maybe_forward(AttachmentName, Message, SrcBoxId, DestBox, Call, Msg
+                         ,kapps_call_command:b_channel_status(Call)
+                         );
         {'error', _R} ->
             lager:info("error while attempting to record a forward message: ~p", [_R])
     end.
+
+maybe_forward(AttachmentName, Message, SourceBoxId, #mailbox{media_extension=Ext}=DestinationBox, Call, Msg, {'ok', _Status}) ->
+    Length = kz_json:get_integer_value(<<"Length">>, Msg, 0),
+    case review_recording(AttachmentName, 'false', DestinationBox, Call) of
+        {'ok', 'record'} ->
+            record_forward(tmp_file(Ext), Message, SourceBoxId, DestinationBox, Call);
+        {'ok', _Selection} ->
+            cf_util:start_task(fun forward_message/6
+                              ,[AttachmentName, Length, Message, SourceBoxId, DestinationBox]
+                              , Call
+                              )
+    end;
+maybe_forward(AttachmentName, Message, SourceBoxId, DestinationBox, Call, Msg, {'error', _E}) ->
+    Length = kz_json:get_integer_value(<<"Length">>, Msg, 0),
+    forward_message(AttachmentName, Length, Message, SourceBoxId, DestinationBox, Call).
 
 -spec forward_message(kz_term:api_ne_binary(), non_neg_integer(), kz_json:object(), kz_term:ne_binary(), mailbox(), kapps_call:call()) -> 'ok'.
 forward_message(AttachmentName, Length, Message, SrcBoxId, #mailbox{mailbox_number=BoxNum
@@ -1616,6 +1624,7 @@ get_mailbox_profile(Data, Call) ->
                     ,account_db = AccountDb
                     ,media_extension = kzd_voicemail_box:media_extension(MailboxJObj)
                     ,forward_type = ?DEFAULT_FORWARD_TYPE
+                    ,oldest_message_first = kzd_vmboxes:oldest_message_first(MailboxJObj)
                     };
         {'error', R} ->
             lager:info("failed to load voicemail box ~s, ~p", [Id, R]),

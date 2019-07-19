@@ -657,13 +657,7 @@
                     "type": "object"
                 },
                 "zones": {
-                    "description": "The zone(s) of an account",
-                    "properties": {
-                        "home": {
-                            "description": "Which zone is considered the account's home zone",
-                            "type": "string"
-                        }
-                    },
+                    "description": "A priority ordered mapping of zones for the account",
                     "type": "object"
                 }
             },
@@ -2254,6 +2248,11 @@
                 "min_digits": {
                     "description": "Minimum number of digits that must match the regex to collected DTMF",
                     "type": "integer"
+                },
+                "permit_custom_callflow": {
+                    "default": false,
+                    "description": "Permit a custom callflow to be accepted instead of restricting to no_match only when looking up callflows",
+                    "type": "boolean"
                 },
                 "skip_module": {
                     "description": "When set to true this callflow action is skipped, advancing to the wildcard branch (if any)",
@@ -5301,11 +5300,13 @@
                 },
                 "hotdesk": {
                     "description": "The hotdesk status of this device",
-                    "type": "object",
-                    "users": {
-                        "description": "The user(s) currently hotdesked into the device",
-                        "type": "object"
-                    }
+                    "properties": {
+                        "users": {
+                            "description": "The user(s) currently hotdesked into the device",
+                            "type": "object"
+                        }
+                    },
+                    "type": "object"
                 },
                 "language": {
                     "description": "The language for the device",
@@ -9427,7 +9428,7 @@
                     ],
                     "type": "string"
                 },
-                "Items": {
+                "Invoice": {
                     "type": "string"
                 },
                 "Vendor-ID": {
@@ -9438,7 +9439,7 @@
                 "Account-ID",
                 "Bookkeeper-ID",
                 "Bookkeeper-Type",
-                "Items",
+                "Invoice",
                 "Vendor-ID"
             ],
             "type": "object"
@@ -24563,9 +24564,9 @@
                     "type": "object"
                 },
                 "amount": {
-                    "description": "Ledger amount",
+                    "description": "Ledger amount, in currency amount",
                     "minimum": 1,
-                    "type": "integer"
+                    "type": "number"
                 },
                 "description": {
                     "description": "Useful description for ledger",
@@ -26157,30 +26158,10 @@
                         },
                         "street_post_dir": {
                             "description": "Street Post-Direction",
-                            "enum": [
-                                "E",
-                                "N",
-                                "NE",
-                                "NW",
-                                "S",
-                                "SE",
-                                "SW",
-                                "W"
-                            ],
                             "type": "string"
                         },
                         "street_pre_dir": {
                             "description": "Street Pre-Direction",
-                            "enum": [
-                                "E",
-                                "N",
-                                "NE",
-                                "NW",
-                                "S",
-                                "SE",
-                                "SW",
-                                "W"
-                            ],
                             "type": "string"
                         },
                         "street_type": {
@@ -27756,9 +27737,20 @@
                     "type": "string"
                 },
                 "prorate": {
-                    "default": false,
                     "description": "Should this item be prorated",
-                    "type": "boolean"
+                    "properties": {
+                        "additions": {
+                            "default": true,
+                            "description": "Should this item be prorated during additions",
+                            "type": "boolean"
+                        },
+                        "removals": {
+                            "default": false,
+                            "description": "Should this item be prorated during removals",
+                            "type": "boolean"
+                        }
+                    },
+                    "type": "object"
                 },
                 "rate": {
                     "default": 0.0,
@@ -27915,6 +27907,56 @@
             "required": [
                 "body",
                 "to"
+            ],
+            "type": "object"
+        },
+        "sso_provider": {
+            "description": "SSO Provider settings",
+            "properties": {
+                "friendly_name": {
+                    "description": "Friendly name for the provider",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name for the provider",
+                    "type": "string"
+                },
+                "params": {
+                    "description": "SSO Provider parameters",
+                    "properties": {
+                        "client_id": {
+                            "description": "Client ID provided by SSO provider",
+                            "type": "string"
+                        },
+                        "include_granted_scopes": {
+                            "description": "Whether to include the granted scopes",
+                            "type": "boolean"
+                        },
+                        "response_type": {
+                            "description": "Response type from SSO provider",
+                            "enum": [
+                                "code"
+                            ],
+                            "type": "string"
+                        },
+                        "scopes": {
+                            "description": "Scope(s) requested",
+                            "items": {
+                                "description": "Scope name",
+                                "type": "string"
+                            },
+                            "type": "array"
+                        }
+                    },
+                    "type": "object"
+                },
+                "url": {
+                    "description": "URL of the provider's auth endpoint",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "url"
             ],
             "type": "object"
         },
@@ -29319,6 +29361,21 @@
             },
             "type": "object"
         },
+        "system_config.cluster": {
+            "description": "Schema for cluster system_config",
+            "properties": {
+                "cluster_id": {
+                    "description": "provisioner cluster id",
+                    "type": "string"
+                },
+                "zones": {
+                    "default": {},
+                    "description": "cluster zones",
+                    "type": "object"
+                }
+            },
+            "type": "object"
+        },
         "system_config.conferences": {
             "description": "Schema for conferences system_config",
             "properties": {
@@ -30105,10 +30162,6 @@
         "system_config.crossbar.phonebook": {
             "description": "Schema for crossbar.phonebook system_config",
             "properties": {
-                "cluster_id": {
-                    "description": "the kazoo cluster_id",
-                    "type": "string"
-                },
                 "enabled": {
                     "default": false,
                     "description": "phonebook integration enabled",
@@ -30287,6 +30340,21 @@
                     },
                     "description": "datamgr cache policy",
                     "type": "object"
+                },
+                "change_notice_exclude_types": {
+                    "default": [
+                        "cdr",
+                        "ledger",
+                        "audit_log",
+                        "login_attempt",
+                        "pivot_debug",
+                        "notify_smtp_log"
+                    ],
+                    "description": "datamgr change_notice_exclude_types",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": "array"
                 },
                 "default_archive_folder": {
                     "default": "/tmp",
@@ -30996,6 +31064,17 @@
                         "type": "object"
                     },
                     "type": "array"
+                }
+            },
+            "type": "object"
+        },
+        "system_config.epmd": {
+            "description": "Schema for epmd system_config",
+            "properties": {
+                "check_every_s": {
+                    "default": 60,
+                    "description": "epmd check_every_s",
+                    "type": "integer"
                 }
             },
             "type": "object"
@@ -31730,6 +31809,17 @@
                 "use_bigcouch_direct": {
                     "default": true,
                     "description": "kazoo_couch use bigcouch direct",
+                    "type": "boolean"
+                }
+            },
+            "type": "object"
+        },
+        "system_config.kazoo_directory": {
+            "description": "Schema for kazoo_directory system_config",
+            "properties": {
+                "restrict_to_known_types": {
+                    "default": false,
+                    "description": "kazoo_directory restrict_to_known_types",
                     "type": "boolean"
                 }
             },
@@ -32943,6 +33033,12 @@
                     "minimum": 1,
                     "type": "integer"
                 },
+                "time_between_db_ms": {
+                    "default": 50,
+                    "description": "number_manager time_between_db_ms",
+                    "minimum": 1,
+                    "type": "integer"
+                },
                 "time_between_numbers_ms": {
                     "default": 1000,
                     "description": "time to pause in between the processing of numbers in milliseconds",
@@ -33373,10 +33469,6 @@
         "system_config.provisioner": {
             "description": "Schema for provisioner system_config",
             "properties": {
-                "cluster_id": {
-                    "description": "provisioner cluster id",
-                    "type": "string"
-                },
                 "combo_keys": {
                     "default": {
                         "cisco": {
@@ -33518,7 +33610,11 @@
                                     ],
                                     "type": "string"
                                 }
-                            },
+                            }
+                        },
+                        "headers": {
+                            "default": {},
+                            "description": "pusher apple headers",
                             "type": "object"
                         },
                         "host": {
@@ -33550,7 +33646,11 @@
                                     ],
                                     "type": "string"
                                 }
-                            },
+                            }
+                        },
+                        "headers": {
+                            "default": {},
+                            "description": "pusher firebase headers",
                             "type": "object"
                         }
                     },
@@ -33577,7 +33677,11 @@
                                     ],
                                     "type": "string"
                                 }
-                            },
+                            }
+                        },
+                        "headers": {
+                            "default": {},
+                            "description": "pusher google headers",
                             "type": "object"
                         }
                     },
@@ -34447,6 +34551,69 @@
             },
             "type": "object"
         },
+        "system_config.tasks.fax_cleanup": {
+            "description": "Schema for tasks.fax_cleanup system_config",
+            "properties": {
+                "enabled": {
+                    "default": true,
+                    "description": "Enables the cluster to run the fax cleanup task",
+                    "type": "boolean"
+                },
+                "page_size": {
+                    "default": 32,
+                    "description": "The number of documents to process in one fetch operation",
+                    "type": "integer"
+                },
+                "per_page_pause_ms": {
+                    "default": 1000,
+                    "description": "How many milliseconds to pause between chunk fetches",
+                    "type": "integer"
+                },
+                "stale_after_s": {
+                    "default": 604800,
+                    "description": "The number of seconds old a document is before it is considered to be stale",
+                    "type": "integer"
+                }
+            },
+            "type": "object"
+        },
+        "system_config.tasks.ledger_rollover": {
+            "description": "Schema for tasks.ledger_rollover system_config",
+            "properties": {
+                "refresh_in_parallel": {
+                    "default": 50,
+                    "description": "tasks ledger_rollover refresh_in_parallel",
+                    "type": "integer"
+                },
+                "refresh_view_enabled": {
+                    "default": false,
+                    "description": "tasks ledger_rollover refresh_view_enabled",
+                    "type": "boolean"
+                },
+                "rollover_in_parallel": {
+                    "default": 10,
+                    "description": "How many accounts to rollover per-pass (in parallel)",
+                    "type": "integer"
+                }
+            },
+            "type": "object"
+        },
+        "system_config.tasks.modb_creation": {
+            "description": "Schema for tasks.modb_creation system_config",
+            "properties": {
+                "create_in_parallel": {
+                    "default": 1,
+                    "description": "How many accounts to process per pass (in parallel).",
+                    "type": "integer"
+                },
+                "creation_day": {
+                    "default": 28,
+                    "description": "Which day of the month (of current month) to create next month's MODBs on",
+                    "type": "integer"
+                }
+            },
+            "type": "object"
+        },
         "system_config.tasks.notify_resend": {
             "description": "Schema for tasks.notify_resend system_config",
             "properties": {
@@ -34521,6 +34688,17 @@
                     "default": "knm_local",
                     "description": "carrier module to use if none provided during numbers import",
                     "type": "string"
+                }
+            },
+            "type": "object"
+        },
+        "system_config.tasks.services_rollover": {
+            "description": "Schema for tasks.services_rollover system_config",
+            "properties": {
+                "rollover_in_parallel": {
+                    "default": 10,
+                    "description": "How many accounts to rollover services for per pass (in parallel)",
+                    "type": "integer"
                 }
             },
             "type": "object"
@@ -35321,7 +35499,7 @@
                     "description": "The email of the user",
                     "format": "email",
                     "maxLength": 254,
-                    "minLength": 1,
+                    "minLength": 3,
                     "type": "string"
                 },
                 "enabled": {
@@ -35620,6 +35798,11 @@
                     },
                     "type": "array"
                 },
+                "oldest_message_first": {
+                    "default": false,
+                    "description": "Play older voicemail messages before new ones",
+                    "type": "boolean"
+                },
                 "owner_id": {
                     "description": "The ID of the user object that 'owns' the voicemail box",
                     "maxLength": 32,
@@ -35827,6 +36010,15 @@
                     "description": "Is the webhook enabled and running",
                     "type": "boolean"
                 },
+                "format": {
+                    "default": "form-data",
+                    "description": "What Body format to use when sending the webhook. only valid for 'post' & 'put' verbs",
+                    "enum": [
+                        "form-data",
+                        "json"
+                    ],
+                    "type": "string"
+                },
                 "hook": {
                     "description": "The trigger event for a request being made to 'callback_uri'.",
                     "type": "string"
@@ -35836,7 +36028,8 @@
                     "description": "What HTTP method to use when contacting the server",
                     "enum": [
                         "get",
-                        "post"
+                        "post",
+                        "put"
                     ],
                     "type": "string"
                 },
@@ -35973,6 +36166,12 @@
                         }
                     },
                     "type": "object"
+                },
+                "sso_providers": {
+                    "items": {
+                        "$ref": "#/definitions/sso_provider"
+                    },
+                    "type": "array"
                 },
                 "twoway_trunks_price": {
                     "description": "The price to show for twoway trunks, this is currently only for display purposes",
@@ -36344,6 +36543,15 @@
             "required": true,
             "type": "string"
         },
+        "MODB_SUFFIX": {
+            "in": "path",
+            "maxLength": 6,
+            "minLength": 6,
+            "name": "MODB_SUFFIX",
+            "pattern": "^[0-9]{6}",
+            "required": true,
+            "type": "string"
+        },
         "MODULE": {
             "in": "path",
             "name": "MODULE",
@@ -36467,6 +36675,12 @@
             "minLength": 32,
             "name": "RESOURCE_TEMPLATE_ID",
             "pattern": "^[0-9a-f]+$",
+            "required": true,
+            "type": "string"
+        },
+        "SAMPLE_ID": {
+            "in": "path",
+            "name": "SAMPLE_ID",
             "required": true,
             "type": "string"
         },
@@ -40303,6 +40517,26 @@
                 }
             }
         },
+        "/accounts/{ACCOUNT_ID}/ledgers/summary/{MODB_SUFFIX}": {
+            "get": {
+                "parameters": [
+                    {
+                        "$ref": "#/parameters/auth_token_header"
+                    },
+                    {
+                        "$ref": "#/parameters/MODB_SUFFIX"
+                    },
+                    {
+                        "$ref": "#/parameters/ACCOUNT_ID"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "request succeeded"
+                    }
+                }
+            }
+        },
         "/accounts/{ACCOUNT_ID}/ledgers/total": {
             "get": {
                 "parameters": [
@@ -44062,6 +44296,43 @@
                 }
             }
         },
+        "/accounts/{ACCOUNT_ID}/services/audit_summary": {
+            "get": {
+                "parameters": [
+                    {
+                        "$ref": "#/parameters/auth_token_header"
+                    },
+                    {
+                        "$ref": "#/parameters/ACCOUNT_ID"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "request succeeded"
+                    }
+                }
+            }
+        },
+        "/accounts/{ACCOUNT_ID}/services/audit_summary/{SOURCE_SERVICE}": {
+            "get": {
+                "parameters": [
+                    {
+                        "$ref": "#/parameters/auth_token_header"
+                    },
+                    {
+                        "$ref": "#/parameters/SOURCE_SERVICE"
+                    },
+                    {
+                        "$ref": "#/parameters/ACCOUNT_ID"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "request succeeded"
+                    }
+                }
+            }
+        },
         "/accounts/{ACCOUNT_ID}/services/available": {
             "get": {
                 "parameters": [
@@ -45944,6 +46215,43 @@
                 "parameters": [
                     {
                         "$ref": "#/parameters/auth_token_header"
+                    },
+                    {
+                        "$ref": "#/parameters/ACCOUNT_ID"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "request succeeded"
+                    }
+                }
+            }
+        },
+        "/accounts/{ACCOUNT_ID}/webhooks/samples": {
+            "get": {
+                "parameters": [
+                    {
+                        "$ref": "#/parameters/auth_token_header"
+                    },
+                    {
+                        "$ref": "#/parameters/ACCOUNT_ID"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "request succeeded"
+                    }
+                }
+            }
+        },
+        "/accounts/{ACCOUNT_ID}/webhooks/samples/{SAMPLE_ID}": {
+            "get": {
+                "parameters": [
+                    {
+                        "$ref": "#/parameters/auth_token_header"
+                    },
+                    {
+                        "$ref": "#/parameters/SAMPLE_ID"
                     },
                     {
                         "$ref": "#/parameters/ACCOUNT_ID"
