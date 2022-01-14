@@ -1,8 +1,13 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
 %%% @author Karl Anderson
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_fs_resource).
@@ -65,27 +70,9 @@ start_link(Node, Options) ->
 
 -spec handle_originate_req(kz_json:object(), kz_term:proplist()) -> kz_types:sup_startchild_ret().
 handle_originate_req(JObj, Props) ->
-    _ = kz_util:put_callid(JObj),
-
+    _ = kz_log:put_callid(JObj),
     Node = props:get_value('node', Props),
-    case kz_json:is_true(<<"Start-Control-Process">>, JObj, 'true') of
-        'true' ->
-            handle_originate_req_if_possible(JObj
-                                            ,Node
-                                            ,ecallmgr_call_sup:control_context()
-                                            );
-        'false' ->
-            lager:info("originate request does not require an call control process"),
-            ecallmgr_originate_sup:start_originate_proc(Node, JObj, #{})
-    end.
-
-handle_originate_req_if_possible(JObj, _Node, {'error', _E}) ->
-    lager:warning("unable to handle originate request due to AMQP worker error ~p", [_E]),
-    lager:info("republishing request for another ecallmgr"),
-    kz_amqp_worker:cast(JObj, fun kapi_resource:publish_originate_req/1);
-handle_originate_req_if_possible(JObj, Node, {'ok', Context}) ->
-    lager:debug("received originate request for node ~s, starting originate process", [Node]),
-    ecallmgr_call_sup:wait_for_exit(ecallmgr_originate_sup:start_originate_proc(Node, JObj, Context), Context).
+    ecallmgr_originate_sup:start_originate_proc(Node, JObj).
 
 %%%=============================================================================
 %%% gen_server callbacks
@@ -98,7 +85,7 @@ handle_originate_req_if_possible(JObj, Node, {'ok', Context}) ->
 -spec init([atom() | kz_term:proplist()]) -> {'ok', state()}.
 init([Node, Options]) ->
     process_flag('trap_exit', 'true'),
-    kz_util:put_callid(Node),
+    kz_log:put_callid(Node),
     lager:info("starting new fs resource listener for ~s", [Node]),
     {'ok', #state{node=Node, options=Options}}.
 

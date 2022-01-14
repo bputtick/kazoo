@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_services_bookkeeper).
@@ -59,7 +63,7 @@ maybe_update(Services) ->
 %%------------------------------------------------------------------------------
 -type invoices_acc() :: [{kz_json:object(), kz_amqp_worker:request_return()}].
 -spec invoices_foldl_fun(kz_services:services()) ->
-                                fun((kz_json:object(), invoices_acc()) -> invoices_acc()).
+          fun((kz_json:object(), invoices_acc()) -> invoices_acc()).
 invoices_foldl_fun(Services) ->
     fun(Invoice, Results) ->
             Type = kz_services_invoice:bookkeeper_type(Invoice),
@@ -82,7 +86,7 @@ invoices_foldl_fun(Services) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec maybe_store_audit_log(kz_services:services(), kz_services_invoice:invoice()) ->
-                                   kz_term:api_object().
+          kz_term:api_object().
 maybe_store_audit_log(Services, Invoice) ->
     case kz_services:account_id(Services) =:= master_account_id()
         andalso (not ?KZ_SERVICE_STORE_MASTER_AUDIT)
@@ -99,7 +103,7 @@ master_account_id() ->
     end.
 
 -spec store_audit_log(kz_services:services(), kz_services_invoice:invoice()) ->
-                             kz_term:api_object().
+          kz_term:api_object().
 store_audit_log(Services, Invoice) ->
     AccountId = kz_services:account_id(Services),
     AuditJObj = kz_services:audit_log(Services),
@@ -112,7 +116,7 @@ store_audit_log(Services, Invoice) ->
             ,{[<<"bookkeeper">>, <<"vendor_id">>], kz_services_invoice:bookkeeper_vendor_id(Invoice)}
             ],
     JObj = kz_doc:update_pvt_parameters(kz_json:set_values(Props, kz_json:new())
-                                       ,kz_util:format_account_db(AccountId)
+                                       ,kzs_util:format_account_db(AccountId)
                                        ,[{'account_id', AccountId}
                                         ,{'crossbar_doc_vsn', 2}
                                         ,{'id', kazoo_modb_util:modb_id()}
@@ -130,8 +134,8 @@ store_audit_log(Services, Invoice) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec update_audit_log(kz_services:services(), kz_term:api_object(), kz_amqp_worker:request_return()) ->
-                              kz_term:api_object().
+-spec update_audit_log(kz_services:services(), kz_term:api_object(), kz_amqp_worker:request_return() | kz_term:proplist()) ->
+          kz_term:api_object().
 update_audit_log(_Services, 'undefined', _Result) -> 'undefined';
 update_audit_log(Services, AuditJObj, {'error', 'timeout'}) ->
     Props = [{<<"status">>, ?STATUS_FAILED}
@@ -190,7 +194,7 @@ notify_reseller(Services, Invoice, AuditJObj) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec update_bookkeeper(kz_term:ne_binary(), kz_services_invoice:invoice(), kz_services:services(), kz_term:api_object()) ->
-                               kz_amqp_worker:request_return().
+          kz_amqp_worker:request_return().
 update_bookkeeper(Type, Invoice, Services, 'undefined') ->
     AuditJObj = kz_json:from_list([{<<"audit">>, kz_services:audit_log(Services)}]),
     update_bookkeeper(Type, Invoice, Services, AuditJObj);
@@ -200,7 +204,7 @@ update_bookkeeper(_Type, Invoice, Services, AuditJObj) ->
               ,{<<"Bookkeeper-Type">>, kz_services_invoice:bookkeeper_type(Invoice)}
               ,{<<"Vendor-ID">>, kz_services_invoice:bookkeeper_vendor_id(Invoice)}
               ,{<<"Invoice">>, kz_json:delete_key(<<"plan">>, kz_services_invoice:public_json(Invoice))}
-              ,{<<"Call-ID">>, kz_util:get_callid()}
+              ,{<<"Call-ID">>, kz_log:get_callid()}
               ,{<<"Audit-Log">>, kz_doc:public_fields(AuditJObj)}
                | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
               ],

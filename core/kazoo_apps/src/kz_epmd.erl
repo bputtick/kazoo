@@ -1,6 +1,11 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc Monitors EPMD connection and restarts it when necessary
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_epmd).
@@ -35,9 +40,9 @@ start_link() ->
 
 -spec init(any()) -> {'ok', state()}.
 init(_) ->
-    lager:info("starting EPMD monitor"),
     {'match', [Name, Host]} = re:run(atom_to_list(node()), "([^@]+)@(.+)", [{'capture', 'all_but_first', 'list'}]),
 
+    lager:info("starting EPMD monitor with name ~s on host ~s", [Name, Host]),
     {'ok', check_epmd(#state{name=Name
                             ,host=Host
                             ,epmd_mod=net_kernel:epmd_module()

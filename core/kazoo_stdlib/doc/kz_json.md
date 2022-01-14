@@ -62,8 +62,10 @@ Several predicates exist that will return booleans.
 
 -   `from_list(Proplist)`: Top-level change from proplist to object
 -   `from_map(Map)`: Converts map back to JSON object data structure
--   `from_list_recursive(Proplist)`: Converts nested proplists to objects as well
-
+-   `from_list_recursive(Proplist)`: Equivalent to `from_list_recursive/2` with default option: `#{ascii_list_enforced => 'true', invalid_as_null => 'true'}`
+-   `from_list_recursive(Proplist, #{}=Options)`: Converts nested proplists to objects as well. Options are:
+    -   `ascii_list_enforced`: If the value of a proplist item is list and all of the elements are ASCII characters, convert the value to binary. This also converts empty list `[]` to binary. If you are sure that you don't have any string value, but expect and empty list as value, set this option to `false` to not convert the empty list to binary
+    -   `invalid_as_null`: If the value of a proplist item is not any of `list()`, `binary()`, `atom()`, `integer()`, `float()`, `kz_time:date()`, `kz_time:datetime()`, `kz_json:object()` or `kz_term:proplist()` then set the value to `null`, otherwise throw `{'error', kz_term:ne_binary()}`
 
 ## Merging Objects
 
@@ -72,33 +74,13 @@ You can merge two (or more) objects together and specify which objects' value wi
 -   `merge([JObj1, JObj2,...])`: Defaults to using the `merge_right` strategy where the object on the "right" will have its value used when both objects have a value at a give key path.
 -   `merge(Strategy, JObjs)`: Choose a strategy, either `fun kz_json:merge_right/2` or `fun kz_json:merge_left/2` (or define your own), and apply it to the list of objects.
 
+Both `merge_left/2` and `merge_right/2` will keep the left or right empty objects (respectively) when they exist at a given key path if the other value is also an object (empty or not). To override this behavior and always recursively merge the values when both are objects, specify `'recursive' => 'true'` in the `Options` map passed in `merge(JObjs, Options)`, `merge(JObj1, JObj2, Options)`, `merge(Strategy, JObjs, Options)`, or `merge(JObj1, JObj2, Options)`, as arg 4 to `merge/4`, or as arg 5 to `merge/5`.
+
 ### Handling `null`
 
 Sometimes it is beneficial to include the `null` atom as a value (for downstream processing perhaps) versus triggering a `delete_key` equivalent.
 
 `set_value` and `merge` can take an optional map `#{'keep_null' => 'true'}` to ensure `null` is kept in the resulting data structure.
-
-### `merge/3` vs `merge_recursive/2`
-
-There is a second, older implementation of merging objects called `merge_recursive/2`. The main difference is that it operates differently when merging a path in the second object that has an empty object as the value:
-
-```erlang
-> J1 = {[{<<"foo">>,false}]},
-> J2 = {[{<<"foo">>,false}, {<<"bar">>,{[{<<"foo">>,{[]}}]}}]}.
-> kz_json:merge(fun kz_json:merge_right/2, J1, J2).
-{[{<<"foo">>,false},{<<"bar">>,{[{<<"foo">>,{[]}}]}}]}
-> kz_json:merge(fun kz_json:merge_left/2, J1, J2).
-{[{<<"foo">>,false},{<<"bar">>,{[{<<"foo">>,{[]}}]}}]}
-
-> kz_json:merge_recursive(J1, J2).
-{[{<<"foo">>,false}]}
-> kz_json:merge_recursive(J2, J1).
-{[{<<"foo">>,false},{<<"bar">>,{[{<<"foo">>,{[]}}]}}]}
-```
-
-Since `bar.foo` in `J2` is an empty object, the values won't be set because folding over an empty object returns the accumulator (`J1` in this case). Nothing in `merge_recursive/4` sets `bar` or `bar.foo` onto `J1`.
-
-More generally, the longest key path suffix with an empty object as the value on the right side of the merge will be stripped from the merged object when using `merge_recursive/2`.
 
 ## List-like operations
 

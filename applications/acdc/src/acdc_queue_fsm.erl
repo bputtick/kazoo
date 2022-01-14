@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc Controls how a queue process progresses a member_call
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(acdc_queue_fsm).
@@ -69,7 +74,7 @@
                ,agent_ring_timer_ref :: kz_term:api_reference() % how long to ring an agent before moving to the next
 
                ,member_call :: kapps_call:call() | 'undefined'
-               ,member_call_start :: kz_term:api_non_neg_integer()
+               ,member_call_start :: kz_time:start_time() | 'undefined'
                ,member_call_winners :: [kz_term:api_object()] %% who won the call
 
                                        %% Config options
@@ -191,12 +196,12 @@ cdr_url(ServerRef) ->
 %%------------------------------------------------------------------------------
 -spec init(list()) -> {'ok', atom(), state()}.
 init([WorkerSup, MgrPid, AccountId, QueueId]) ->
-    kz_util:put_callid(<<"statem_", QueueId/binary, "_", (kz_term:to_binary(self()))/binary>>),
+    kz_log:put_callid(<<"statem_", QueueId/binary, "_", (kz_term:to_binary(self()))/binary>>),
 
-    webseq:start(?WSD_ID),
+    _ = webseq:start(?WSD_ID),
     webseq:reg_who(?WSD_ID, self(), iolist_to_binary([<<"qFSM">>, pid_to_list(self())])),
 
-    AccountDb = kz_util:format_account_db(AccountId),
+    AccountDb = kzs_util:format_account_db(AccountId),
     {'ok', QueueJObj} = kz_datamgr:open_cache_doc(AccountDb, QueueId),
 
     gen_statem:cast(self(), {'get_listener_proc', WorkerSup}),
@@ -248,7 +253,7 @@ ready('cast', {'member_call', CallJObj, Delivery}, #state{listener_proc=Listener
                                                          }=State) ->
     Call = kapps_call:from_json(kz_json:get_value(<<"Call">>, CallJObj)),
     CallId = kapps_call:call_id(Call),
-    kz_util:put_callid(CallId),
+    kz_log:put_callid(CallId),
 
     case acdc_queue_manager:should_ignore_member_call(MgrSrv, Call, CallJObj) of
         'false' ->
@@ -584,7 +589,7 @@ connecting({'call', From}, 'current_call', #state{member_call=Call
     ,{'reply', From, current_call(Call, ConnRef, Start)}
     };
 connecting({'call', From}, Event, State) ->
-    handle_sync_event(Event, From, connecting, State);
+    handle_sync_event(Event, From, 'connecting', State);
 
 connecting('info', {'timeout', AgentRef, ?AGENT_RING_TIMEOUT_MESSAGE}, #state{agent_ring_timer_ref=AgentRef
                                                                              ,member_call_winners=[Winner|[]]
@@ -640,8 +645,8 @@ handle_event(_Event, StateName, State) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec handle_sync_event(any(), From :: pid(), StateName :: atom(), state()) ->
-                               {'next_state', StateName :: atom(), state()
-                               ,{'reply', From :: pid(), any()}}.
+          {'next_state', StateName :: atom(), state()
+          ,{'reply', From :: pid(), any()}}.
 handle_sync_event('cdr_url', From, StateName, #state{cdr_url=Url}=State) ->
     {'next_state', StateName, State
     ,{'reply', From, Url}
@@ -718,7 +723,7 @@ clear_member_call(#state{connection_timer_ref=ConnRef
                         ,collect_ref=CollectRef
                         ,queue_id=QueueId
                         }=State) ->
-    kz_util:put_callid(QueueId),
+    kz_log:put_callid(QueueId),
     maybe_stop_timer(ConnRef),
     maybe_stop_timer(AgentRef),
     maybe_stop_timer(CollectRef),
@@ -750,7 +755,8 @@ update_properties(QueueJObj, State) ->
                 %%,strategy = get_strategy(kz_json:get_value(<<"strategy">>, QueueJObj))
                }.
 
--spec current_call('undefined' | kapps_call:call(), kz_term:api_reference() | timeout(), timeout()) -> kz_term:api_object().
+-spec current_call('undefined' | kapps_call:call(), kz_term:api_reference() | timeout(), kz_time:start_time()) ->
+          kz_term:api_object().
 current_call('undefined', _, _) -> 'undefined';
 current_call(Call, QueueTimeLeft, Start) ->
     kz_json:from_list([{<<"call_id">>, kapps_call:call_id(Call)}
@@ -762,7 +768,7 @@ current_call(Call, QueueTimeLeft, Start) ->
                       ,{<<"wait_time">>, elapsed(Start)}
                       ]).
 
--spec elapsed(kz_term:api_reference() | timeout() | integer()) -> kz_term:api_integer().
+-spec elapsed(kz_term:api_reference() | kz_time:start_time()) -> kz_term:api_integer().
 elapsed('undefined') -> 'undefined';
 elapsed(Ref) when is_reference(Ref) ->
     case erlang:read_timer(Ref) of
@@ -778,7 +784,7 @@ elapsed(Time) -> kz_time:elapsed_s(Time).
 %% @end
 %%------------------------------------------------------------------------------
 -spec maybe_delay_connect_req(kapps_call:call(), kz_json:object(), gen_listener:basic_deliver(), state()) ->
-                                     {'next_state', 'ready' | 'connect_req', state()}.
+          {'next_state', 'ready' | 'connect_req', state()}.
 maybe_delay_connect_req(Call, CallJObj, Delivery, #state{listener_proc=ListenerSrv
                                                         ,manager_proc=MgrSrv
                                                         ,connection_timeout=ConnTimeout
@@ -799,7 +805,7 @@ maybe_delay_connect_req(Call, CallJObj, Delivery, #state{listener_proc=ListenerS
 
             {'next_state', 'connect_req', State#state{collect_ref=start_collect_timer()
                                                      ,member_call=Call
-                                                     ,member_call_start=kz_time:now_s()
+                                                     ,member_call_start=kz_time:start_time()
                                                      ,connection_timer_ref=start_connection_timer(ConnTimeout)
                                                      }};
         'false' ->
@@ -831,7 +837,7 @@ maybe_connect_re_req(MgrSrv, ListenerSrv, #state{account_id=AccountId
     end.
 
 -spec maybe_delay_connect_re_req(pid(), pid(), state()) ->
-                                        {'next_state', 'connect_req', state()}.
+          {'next_state', 'connect_req', state()}.
 maybe_delay_connect_re_req(MgrSrv, ListenerSrv, #state{member_call=Call}=State) ->
     CallId = kapps_call:call_id(Call),
     case acdc_queue_manager:up_next(MgrSrv, CallId) of

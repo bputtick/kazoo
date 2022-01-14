@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kzd_whitelabel).
@@ -199,9 +203,9 @@ port_authority(Doc, Default) ->
     %% as 'to' Email address but the UI was setting that as account id!
     case kz_json:get_ne_binary_value([<<"port">>, <<"authority">>], Doc) of
         ?MATCH_ACCOUNT_RAW(_)=Id -> Id;
-        ?MATCH_ACCOUNT_UNENCODED(_)=Db -> kz_util:format_account_id(Db);
-        ?MATCH_ACCOUNT_ENCODED(_)=Db -> kz_util:format_account_id(Db);
-        ?MATCH_ACCOUNT_encoded(_)=Db -> kz_util:format_account_id(Db);
+        ?MATCH_ACCOUNT_UNENCODED(_)=Db -> kzs_util:format_account_id(Db);
+        ?MATCH_ACCOUNT_ENCODED(_)=Db -> kzs_util:format_account_id(Db);
+        ?MATCH_ACCOUNT_encoded(_)=Db -> kzs_util:format_account_id(Db);
         _ -> Default
     end.
 
@@ -294,12 +298,12 @@ set_twoway_trunks_price(Doc, TwowayTrunksPrice) ->
     kz_json:set_value([<<"twoway_trunks_price">>], TwowayTrunksPrice, Doc).
 
 -spec fetch(kz_term:api_binary()) ->
-                   {'ok', kz_json:object()} |
-                   {'error', any()}.
+          {'ok', kz_json:object()} |
+          {'error', any()}.
 fetch('undefined') ->
     {'error', 'account_id_undefined'};
 fetch(Account) ->
-    AccoundDb = kz_util:format_account_db(Account),
+    AccoundDb = kzs_util:format_account_db(Account),
     kz_datamgr:open_cache_doc(AccoundDb, ?ID).
 
 -spec fetch_port_authority(kz_term:api_binary(), Default) -> kz_term:api_ne_binary() | Default.

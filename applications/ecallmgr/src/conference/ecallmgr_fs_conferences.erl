@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2013-2019, 2600Hz
+%%% @copyright (C) 2013-2020, 2600Hz
 %%% @doc Track FreeSWITCH conference information and provide accessors
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_fs_conferences).
@@ -127,8 +132,8 @@ destroy(UUID) ->
     gen_server:call(?SERVER, {'conference_destroy', UUID}).
 
 -spec node(kz_term:ne_binary()) ->
-                  {'ok', atom()} |
-                  {'error', 'not_found'}.
+          {'ok', atom()} |
+          {'error', 'not_found'}.
 node(Name) ->
     case ets:match_object(?CONFERENCES_TBL, #conference{name=Name, _ = '_'}) of
         %% TODO: this ignores conferences on multiple nodes until big-conferences
@@ -299,7 +304,7 @@ is_moderator(#participant{conference_channel_vars=Vars}) ->
 %%------------------------------------------------------------------------------
 -spec init([]) -> {'ok', state()}.
 init([]) ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
     process_flag('trap_exit', 'true'),
     lager:info("starting FreeSWITCH conferences tracker"),
     _ = ets:new(?CONFERENCES_TBL, ['set', 'protected', 'named_table', {'keypos', #conference.uuid}]),
@@ -552,7 +557,7 @@ xml_to_conference(#xmlElement{name='conference'
                                               }).
 
 -spec xml_attrs_to_conference(kz_types:xml_attribs(), conference()) ->
-                                     conference().
+          conference().
 xml_attrs_to_conference([], Conference) -> Conference;
 xml_attrs_to_conference([#xmlAttribute{name=Name, value=Value}
                          |Attrs
@@ -561,7 +566,7 @@ xml_attrs_to_conference([#xmlAttribute{name=Name, value=Value}
     xml_attrs_to_conference(Attrs, C).
 
 -spec xml_attr_to_conference(conference(), kz_types:xml_attrib_name(), kz_types:xml_attrib_value()) ->
-                                    conference().
+          conference().
 xml_attr_to_conference(Conference, 'name', Value) ->
     Conference#conference{name=kz_term:to_binary(Value)};
 xml_attr_to_conference(Conference, 'member-count', Value) ->
@@ -611,7 +616,7 @@ xml_member_to_participant([#xmlElement{name='uuid'
                                       }
                            |XmlElements
                           ], Participant) ->
-    CallId = kz_util:uri_decode(xml_text_to_binary(UUID)),
+    CallId = kz_http_util:urldecode(xml_text_to_binary(UUID)),
     lager:debug("uuid ~s callid ~s", [xml_text_to_binary(UUID), CallId]),
     xml_member_to_participant(XmlElements
                              ,Participant#participant{uuid=kz_term:to_binary(CallId)}

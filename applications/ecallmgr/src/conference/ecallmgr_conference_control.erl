@@ -1,6 +1,11 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc Execute conference commands
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_conference_control).
@@ -85,7 +90,7 @@ handle_conference_command(JObj, Props) ->
 %%------------------------------------------------------------------------------
 -spec init([atom() | kz_term:ne_binary()]) -> {'ok', state()}.
 init([Node, ConferenceId, InstanceId]) ->
-    kz_util:put_callid(ConferenceId),
+    kz_log:put_callid(ConferenceId),
     lager:info("starting new conference control for ~s", [ConferenceId]),
     {'ok', #state{node=Node
                  ,conference_id=ConferenceId
@@ -99,16 +104,16 @@ init([Node, ConferenceId, InstanceId]) ->
 %%------------------------------------------------------------------------------
 -spec handle_call(any(), kz_term:pid_ref(), state()) -> kz_types:handle_call_ret_state(state()).
 handle_call(_Request, _From, State) ->
-    {reply, ok, State}.
+    {'reply', 'ok', State}.
 
 %%------------------------------------------------------------------------------
 %% @doc Handling cast messages.
 %% @end
 %%------------------------------------------------------------------------------
 -spec handle_cast(any(), state()) -> kz_types:handle_cast_ret_state(state()).
-handle_cast({'gen_listener',{'created_queue',_QueueName}}, State) ->
+handle_cast({'gen_listener', {'created_queue', _QueueName}}, State) ->
     {'noreply', State};
-handle_cast({'gen_listener',{'is_consuming',_IsConsuming}}, State) ->
+handle_cast({'gen_listener', {'is_consuming', _IsConsuming}}, State) ->
     {'noreply', State};
 handle_cast(_Msg, State) ->
     {'noreply', State}.

@@ -1,6 +1,11 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2013-2019, 2600Hz
+%%% @copyright (C) 2013-2020, 2600Hz
 %%% @doc Handle rolling over services at the start of the month
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kt_services_rollover).
@@ -28,7 +33,7 @@ handle_req() ->
 
 -spec handle_req(kz_time:date()) -> 'ok'.
 handle_req({Year, Month, 1}) ->
-    _P = kz_util:spawn(fun rollover_accounts/2, [Year, Month]),
+    _P = kz_process:spawn(fun rollover_accounts/2, [Year, Month]),
     lager:info("its a new month ~p-~p, rolling over services in ~p", [Year, Month, _P]);
 handle_req({_Year, _Month, _Day}) -> 'ok'.
 

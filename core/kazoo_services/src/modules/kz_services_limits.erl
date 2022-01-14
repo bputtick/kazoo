@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_services_limits).
@@ -43,7 +47,7 @@ limits_foldl(_BookkeeperHash, [], Acc) ->
     Acc;
 limits_foldl(_BookkeeperHash, PlansList, #{cache_origins := CacheOrigins}=Acc) ->
     Origins = [{'db'
-               ,kz_util:format_account_db(kz_services_plan:vendor_id(Plan))
+               ,kzs_util:format_account_db(kz_services_plan:vendor_id(Plan))
                ,kz_services_plan:id(Plan)
                }
                || Plan <- PlansList
@@ -63,7 +67,7 @@ limits_foldl(_BookkeeperHash, PlansList, #{cache_origins := CacheOrigins}=Acc) -
 %%------------------------------------------------------------------------------
 -spec get_account_limits(kz_services:services()) -> {origin_tuples(), kz_json:object()}.
 get_account_limits(Services) ->
-    AccountDb = kz_util:format_account_db(kz_services:account_id(Services)),
+    AccountDb = kzs_util:format_account_db(kz_services:account_id(Services)),
     case kz_datamgr:open_doc(AccountDb, <<"limits">>) of
         {'ok', JObj} ->
             {[{'db', AccountDb, <<"limits">>}], JObj};

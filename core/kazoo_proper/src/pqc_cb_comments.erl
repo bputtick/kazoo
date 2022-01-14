@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(pqc_cb_comments).
@@ -32,7 +36,7 @@ initial_state() ->
 
 init_system() ->
     TestId = kz_binary:rand_hex(5),
-    kz_util:put_callid(TestId),
+    kz_log:put_callid(TestId),
 
     _ = kz_data_tracing:clear_all_traces(),
     _ = [kapps_controller:start_app(App) ||

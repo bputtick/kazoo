@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc Init to be done.
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kazoo_apps_init).
@@ -16,13 +21,14 @@
 -spec start_link() -> kz_types:startlink_ret().
 start_link() ->
     _ = sanity_checks(), %% one day make this true
-    _ = kz_util:spawn(fun init/0),
+    _ = kz_process:spawn(fun init/0),
     'ignore'.
 
 -spec init() -> 'ok'.
 init() ->
-    kz_util:put_callid(?MODULE),
+    kz_log:put_callid(?MODULE),
     set_cookie(),
+    start_distribution(),
     set_loglevel().
 
 -spec set_cookie() -> 'true'.
@@ -105,7 +111,7 @@ time_hostname_resolutions(HowManyTests, InitTime) ->
                ).
 
 -spec time_hostname_resolution(any(), resolutions()) ->
-                                      resolutions().
+          resolutions().
 time_hostname_resolution(_TestNo, {Min, Max, Total, Timings}) ->
     case time_hostname_resolution() of
         Time when Time < Min ->
@@ -130,3 +136,7 @@ is_system_clock_on_utc() ->
             lager:critical("system is not running in UTC and Kazoo expects it"),
             'false'
     end.
+
+-spec start_distribution() -> 'ok'.
+start_distribution() ->
+    amqp_dist:add_brokers(kz_amqp_connections:uris()).

@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kt_fax_cleanup).
@@ -185,14 +189,14 @@ update_status(Doc, OldStatus, NewStatus) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec format_modb(kzd_fax:doc()) ->
-                         {kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary()}.
+          {kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary()}.
 format_modb(Doc) ->
     FromId = kz_doc:id(Doc),
     FromDB = kz_doc:account_db(Doc),
     AccountId = kz_doc:account_id(Doc),
     {Year, Month, _D} = kz_term:to_date(kz_doc:created(Doc)),
     AccountMODb = kazoo_modb:get_modb(AccountId, Year, Month),
-    ToDB = kz_util:format_account_modb(AccountMODb, 'encoded'),
+    ToDB = kzs_util:format_account_modb(AccountMODb, 'encoded'),
     ToId = ?MATCH_MODB_PREFIX(kz_term:to_binary(Year), kz_date:pad_month(Month), FromId),
     {FromDB, FromId, ToDB, ToId}.
 

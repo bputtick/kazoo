@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(freeswitch).
@@ -53,6 +57,8 @@
         ,event_stream_framing/1, event_stream_framing/2
         ]).
 -export([get_option/2, set_option/3]).
+
+-export([async_api/3]).
 
 -include("ecallmgr.hrl").
 
@@ -125,10 +131,10 @@ json_api(Node, Cmd) -> ?FS_MODULE:json_api(Node, Cmd).
 -spec json_api(atom(), kz_term:text(), kz_term:api_object()) -> fs_json_api_return().
 json_api(Node, Cmd, Args) -> ?FS_MODULE:json_api(Node, Cmd, Args).
 
--spec json_api(atom(), kz_term:text(), kz_term:api_object(), timeout()) -> fs_json_api_return().
-json_api(Node, Cmd, Args, Timeout) -> ?FS_MODULE:json_api(Node, Cmd, Args, Timeout).
+-spec json_api(atom(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:api_object()) -> fs_json_api_return().
+json_api(Node, UUID, Cmd, Args) -> ?FS_MODULE:json_api(Node, UUID, Cmd, Args).
 
--spec json_api(atom(), kz_term:api_object(), kz_term:text(), kz_term:api_object(), timeout()) -> fs_json_api_return().
+-spec json_api(atom(), kz_term:api_ne_binary(), kz_term:text(), kz_term:api_object(), timeout()) -> fs_json_api_return().
 json_api(Node, UUID, Cmd, Args, Timeout) -> ?FS_MODULE:json_api(Node, UUID, Cmd, Args, Timeout).
 
 %%------------------------------------------------------------------------------
@@ -190,8 +196,8 @@ config(Node, Section) ->
     ?FS_MODULE:config(Node, Section).
 
 -spec bgapi4(atom(), atom(), string() | binary(), fun(), list()) ->
-                    {'ok', binary()} |
-                    {'error', 'timeout' | 'exception' | binary()}.
+          {'ok', binary()} |
+          {'error', 'timeout' | 'exception' | binary()}.
 bgapi4(Node, Cmd, Args, Fun, CallBackParams) -> ?FS_MODULE:bgapi4(Node, Cmd, Args, Fun, CallBackParams).
 
 -spec release(atom() | kz_term:ne_binary()) -> {kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary()} | fs_api_return().
@@ -242,3 +248,6 @@ get_option(Node, Option) ->
            ,Option
            ],
     api(Node, 'erlang', kz_binary:join(Args, <<" ">>)).
+
+-spec async_api(atom(), atom(), string() | binary()) -> fs_api_return().
+async_api(Node, Cmd, Args) -> ?FS_MODULE:async_api(Node, Cmd, Args).

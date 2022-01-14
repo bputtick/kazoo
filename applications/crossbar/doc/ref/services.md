@@ -196,3 +196,23 @@ curl -v -X GET \
     http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/services/audit/{AUDIT_ID}
 ```
 
+## Fetch
+
+> GET /v2/accounts/{ACCOUNT_ID}/services/audit/summary
+
+```shell
+curl -v -X GET \
+    -H "X-Auth-Token: {AUTH_TOKEN}" \
+    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/services/audit/summary
+```
+
+## Fetch
+
+> GET /v2/accounts/{ACCOUNT_ID}/services/audit/summary/{SOURCE_SERVICE}
+
+```shell
+curl -v -X GET \
+    -H "X-Auth-Token: {AUTH_TOKEN}" \
+    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/services/audit/summary/{SOURCE_SERVICE}
+```
+

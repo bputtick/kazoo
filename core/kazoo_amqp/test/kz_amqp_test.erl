@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc Test module to work on recovering after AMQP disconnect
 %%%
 %%% Creates a basic publisher and consumer and starts appropriate timers. When
@@ -12,6 +12,10 @@
 %%% P ! stop.
 %%%
 %%% 'stop' will terminate both the consumer and producer
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_amqp_test).
@@ -54,8 +58,8 @@ start_publisher() ->
     spawn_monitor(fun run_publisher/0).
 
 run_publisher() ->
-    kz_util:put_callid(<<?MODULE_STRING"-publisher">>),
-    'true' = kz_amqp_channel:requisition(),
+    kz_log:put_callid(<<?MODULE_STRING"-publisher">>),
+    'ok' = kz_amqp_channel:requisition(),
 
     Payload = [{<<"Category">>, <<"amqp">>}
               ,{<<"Key">>, <<"recv">>}
@@ -67,7 +71,7 @@ loop_publisher(Payload) ->
     loop_publisher(Payload, 2600).
 
 loop_publisher(Payload, Timeout) ->
-    Start = erlang:monotonic_time(),
+    Start = kz_time:start_time(),
     receive
         'stop' -> lager:info("publisher instructed to stop");
         {'kz_amqp_assignment',{'new_channel',_IsNew, _Channel}} ->
@@ -95,8 +99,8 @@ start_consumer() ->
     spawn_monitor(fun run_consumer/0).
 
 run_consumer() ->
-    kz_util:put_callid(<<?MODULE_STRING"-consumer">>),
-    'true' = kz_amqp_channel:requisition(),
+    kz_log:put_callid(<<?MODULE_STRING"-consumer">>),
+    'ok' = kz_amqp_channel:requisition(),
 
     loop_consumer(<<?MODULE_STRING>>).
 
@@ -139,6 +143,6 @@ loop_consumer(Queue, Timeout) ->
 
 decr('infinity', _Start) -> 'infinity';
 decr(Timeout, Start) ->
-    Timeout - (erlang:convert_time_unit(erlang:monotonic_time()-Start, 'native', 'millisecond')).
+    kz_time:decr_timeout(Timeout, Start).
 
 %% WHY a watcher?

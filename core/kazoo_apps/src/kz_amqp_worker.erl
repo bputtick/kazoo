@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc Worker with a dedicated targeted queue.
 %%% Inserts Queue Name as the `Server-ID' and proxies the AMQP request
 %%% (expects responses to the request).
@@ -13,6 +13,11 @@
 %%% </dl>
 %%%
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_amqp_worker).
@@ -107,7 +112,7 @@
                ,neg_resp_count = 0 :: non_neg_integer()
                ,neg_resp_threshold = 1 :: pos_integer()
                ,req_timeout_ref :: kz_term:api_reference()
-               ,req_start_time :: kz_time:now() | 'undefined'
+               ,req_start_time = kz_time:start_time() :: kz_time:start_time() | 'undefined'
                ,callid :: kz_term:api_binary()
                ,pool_ref :: kz_types:server_ref()
                ,defer_response :: kz_term:api_object()
@@ -117,7 +122,7 @@
                ,acc = 'undefined' :: any()
                ,defer = 'undefined' :: 'undefined' | {any(), {pid(), reference()}}
                ,confirm_timeout_ref :: kz_term:api_reference()
-               ,confirm_start_time :: kz_time:now() | 'undefined'
+               ,confirm_start_time = kz_time:start_time() :: kz_time:start_time() | 'undefined'
                ,timeout :: non_neg_integer() | 'undefined'
                ,method :: atom()
                ,reply_to :: kz_term:api_pid_ref()
@@ -204,12 +209,12 @@ call(Req, PubFun) ->
     call(Req, PubFun, fun kz_term:always_true/1).
 
 -spec call(kz_term:api_terms(), publish_fun(), validate_fun()) ->
-                  request_return().
+          request_return().
 call(Req, PubFun, VFun) ->
     call(Req, PubFun, VFun, default_timeout()).
 
 -spec call(kz_term:api_terms(), publish_fun(), validate_fun(), timeout() | pid()) ->
-                  request_return().
+          request_return().
 call(Req, PubFun, VFun, Worker) when is_pid(Worker) ->
     call(Req, PubFun, VFun, default_timeout(), Worker);
 call(Req, PubFun, VFun, Timeout) ->
@@ -219,7 +224,7 @@ call(Req, PubFun, VFun, Timeout) ->
     end.
 
 -spec call(kz_term:api_terms(), publish_fun(), validate_fun(), timeout(), pid()  | atom()) ->
-                  request_return().
+          request_return().
 call(Req, PubFun, VFun, Timeout, Pool) when is_atom(Pool) ->
     case next_worker(Pool) of
         {'error', _}=E -> E;
@@ -253,12 +258,24 @@ next_worker(Pool) ->
     next_worker(Pool, whereis(Pool)).
 
 next_worker(_Pool, 'undefined') ->
-    lager:warning("pool ~s not available yet", [_Pool]),
+    lager:warning("pool ~s not available yet for application ~s"
+                 ,[_Pool
+                  ,kapps_util:get_application()
+                  ]
+                 ),
     {'error', 'poolboy_fault'};
 next_worker(Pool, Pid) when is_pid(Pid) ->
     try poolboy:checkout(Pool, 'false', default_timeout()) of
-        'full' -> {'error', 'pool_full'};
-        Worker -> Worker
+        'full' ->
+            {'error', 'pool_full'};
+        Worker ->
+            lager:debug("application ~s checked out worker ~p from pool ~s"
+                       ,[kapps_util:get_application()
+                        ,Worker
+                        ,Pool
+                        ]
+                       ),
+            Worker
     catch
         _E:_R ->
             lager:warning("poolboy exception: ~s: ~p", [_E, _R]),
@@ -272,11 +289,21 @@ checkout_worker() ->
 -spec checkout_worker(atom()) -> {'ok', pid()} | {'error', pool_error()}.
 checkout_worker(Pool) ->
     try poolboy:checkout(Pool, 'false', default_timeout()) of
-        'full' -> {'error', 'pool_full'};
-        Worker -> {'ok', Worker}
+        'full' ->
+            {'error', 'pool_full'};
+        Worker ->
+            lager:debug("application ~s checked out worker ~p from pool ~s"
+                       ,[kapps_util:get_application()
+                        ,Worker
+                        ,Pool
+                        ]
+                       ),
+            {'ok', Worker}
     catch
         _E:_R ->
-            lager:warning("poolboy exception: ~s: ~p", [_E, _R]),
+            lager:warning("poolboy ~s exception ~s: ~p"
+                         ,[Pool, _E, _R]
+                         ),
             {'error', 'poolboy_fault'}
     end.
 
@@ -286,15 +313,16 @@ checkin_worker(Worker) ->
 
 -spec checkin_worker(pid(), atom()) -> 'ok'.
 checkin_worker(Worker, Pool) ->
+    gen_listener:cast(Worker, 'check_in'),
     poolboy:checkin(Pool, Worker).
 
 -spec call_custom(kz_term:api_terms(), publish_fun(), validate_fun(), gen_listener:binding()) ->
-                         request_return().
+          request_return().
 call_custom(Req, PubFun, VFun, Bind) ->
     call_custom(Req, PubFun, VFun, default_timeout(), Bind).
 
 -spec call_custom(kz_term:api_terms(), publish_fun(), validate_fun(), timeout(), gen_listener:binding()) ->
-                         request_return().
+          request_return().
 call_custom(Req, PubFun, VFun, Timeout, Bind) ->
     case next_worker() of
         {'error', _}=E -> E;
@@ -302,7 +330,7 @@ call_custom(Req, PubFun, VFun, Timeout, Bind) ->
     end.
 
 -spec call_custom(kz_term:api_terms(), publish_fun(), validate_fun(), timeout(), gen_listener:binding(), pid()) ->
-                         request_return().
+          request_return().
 call_custom(Req, PubFun, VFun, Timeout, Bind, Worker) ->
     Prop = maybe_convert_to_proplist(Req),
     gen_listener:add_binding(Worker, Bind),
@@ -320,12 +348,12 @@ call_custom(Req, PubFun, VFun, Timeout, Bind, Worker) ->
     end.
 
 -spec call_collect(kz_term:api_terms(), publish_fun()) ->
-                          request_return().
+          request_return().
 call_collect(Req, PubFun) ->
     call_collect(Req, PubFun, default_timeout()).
 
 -spec call_collect(kz_term:api_terms(), publish_fun(), timeout_or_until()) ->
-                          request_return().
+          request_return().
 call_collect(Req, PubFun, UntilFun) when is_function(UntilFun) ->
     call_collect(Req, PubFun, UntilFun, default_timeout());
 call_collect(Req, PubFun, Whapp) when is_atom(Whapp); is_binary(Whapp) ->
@@ -340,7 +368,7 @@ call_collect(Req, PubFun, Timeout) ->
     call_collect(Req, PubFun, collect_until_timeout(), Timeout).
 
 -spec call_collect(kz_term:api_terms(), publish_fun(), collect_until(), timeout()) ->
-                          request_return().
+          request_return().
 call_collect(_Req, _PubFun, 'undefined', _Timeout) ->
     lager:debug("no VFun, no responses"),
     {'ok', []};
@@ -399,7 +427,7 @@ call_collect(Req, PubFun, UntilFun, Timeout)
     end.
 
 -spec call_collect(kz_term:api_terms(), publish_fun(), collect_until(), timeout(), pid()) ->
-                          request_return().
+          request_return().
 call_collect(Req, PubFun, {UntilFun, Acc}, Timeout, Worker)
   when is_function(UntilFun, 2) ->
     call_collect(Req, PubFun, UntilFun, Timeout, Acc, Worker);
@@ -462,12 +490,12 @@ collect_from_whapp(Whapp) ->
     collect_from_whapp(Whapp, 'false').
 
 -spec collect_from_whapp(kz_term:text(), boolean()) ->
-                                'undefined' | collect_until_fun().
+          'undefined' | collect_until_fun().
 collect_from_whapp(Whapp, IncludeFederated) ->
     collect_from_whapp(Whapp, IncludeFederated, 'false').
 
 -spec collect_from_whapp(kz_term:text(), boolean(), boolean()) ->
-                                'undefined' | collect_until_fun().
+          'undefined' | collect_until_fun().
 collect_from_whapp(Whapp, IncludeFederated, IsShared) ->
     Count = case {IncludeFederated, IsShared} of
                 {'true', 'true'} -> kz_nodes:whapp_zone_count(Whapp); %% Get from {0,1} whapp instance per zone
@@ -514,10 +542,10 @@ collect_or_validate_fun(VFun, Count) ->
     end.
 
 -spec send_request(kz_term:ne_binary(), kz_term:ne_binary(), publish_fun(), kz_term:proplist()) ->
-                          'ok' | {'error', any()}.
+          'ok' | {'error', any()}.
 send_request(CallId, Self, PublishFun, ReqProps)
   when is_function(PublishFun, 1) ->
-    kz_util:put_callid(CallId),
+    kz_log:put_callid(CallId),
     FilteredProps = request_filter(ReqProps),
     Props = request_filter(props:set_values([{?KEY_SERVER_ID, Self}
                                             ,{?KEY_QUEUE_ID, props:get_value(?KEY_SERVER_ID, FilteredProps)}
@@ -530,7 +558,7 @@ send_request(CallId, Self, PublishFun, ReqProps)
     catch
         ?STACKTRACE(_R, E, ST)
         lager:debug("failed to publish: ~s: ~p", [_R, E]),
-        kz_util:log_stacktrace(ST),
+        kz_log:log_stacktrace(ST),
         {'error', E}
         end.
 
@@ -539,7 +567,7 @@ request_filter(Props) ->
     props:filter(fun request_proplist_filter/1, Props).
 
 -spec request_proplist_filter({kz_term:proplist_key(), kz_term:proplist_value()}) -> boolean().
-request_proplist_filter({<<"Server-ID">>, Value}) ->
+request_proplist_filter({?KEY_SERVER_ID, Value}) ->
     not kz_term:is_empty(Value);
 request_proplist_filter({_, 'undefined'}) -> 'false';
 request_proplist_filter(_) -> 'true'.
@@ -554,7 +582,7 @@ request_proplist_filter(_) -> 'true'.
 %%------------------------------------------------------------------------------
 -spec init([worker_args()]) -> {'ok', state()}.
 init([Args]) ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
     lager:debug("starting amqp worker"),
     NegThreshold = props:get_value('neg_resp_threshold', Args, 1),
     Pool = props:get_value('name', Args, 'undefined'),
@@ -569,7 +597,7 @@ init([Args]) ->
 -spec handle_call(any(), kz_term:pid_ref(), state()) -> kz_types:handle_call_ret_state(state()).
 handle_call(Call, From, #state{queue='undefined'}=State)
   when is_tuple(Call) ->
-    kz_util:put_callid(element(2, Call)),
+    kz_log:put_callid(element(2, Call)),
     lager:debug("unable to publish message prior to queue creation - deferring"),
     {'noreply', State#state{defer={Call,From}}};
 handle_call(_, _, #state{flow='false'}=State) ->
@@ -592,7 +620,7 @@ handle_call({'request', ReqProp, PublishFun, VFun, Timeout}
            ,{ClientPid, _}=From
            ,#state{queue=Q, confirms=Confirm}=State
            ) ->
-    _ = kz_util:put_callid(ReqProp),
+    _ = kz_log:put_callid(ReqProp),
     CallId = get('callid'),
     MsgId = kz_api:msg_reply_id(ReqProp),
 
@@ -609,7 +637,7 @@ handle_call({'request', ReqProp, PublishFun, VFun, Timeout}
                         ,current_msg_id = MsgId
 
                         ,confirm_timeout_ref = start_confirm_timeout(Timeout)
-                        ,confirm_start_time = os:timestamp()
+                        ,confirm_start_time = kz_time:start_time()
                         ,timeout = Timeout
                         ,method = 'request'
                         ,callid = CallId
@@ -626,7 +654,7 @@ handle_call({'request', ReqProp, PublishFun, VFun, Timeout}
                         ,neg_resp_count = 0
                         ,current_msg_id = MsgId
                         ,req_timeout_ref = start_req_timeout(Timeout)
-                        ,req_start_time = os:timestamp()
+                        ,req_start_time = kz_time:start_time()
                         ,callid = CallId
                         }
             };
@@ -638,7 +666,7 @@ handle_call({'call_collect', ReqProp, PublishFun, UntilFun, Timeout, Acc}
            ,{ClientPid, _}=From
            ,#state{queue=Q, confirms=Confirm}=State
            ) ->
-    _ = kz_util:put_callid(ReqProp),
+    _ = kz_log:put_callid(ReqProp),
     CallId = get('callid'),
     MsgId = kz_api:msg_reply_id(ReqProp),
 
@@ -656,7 +684,7 @@ handle_call({'call_collect', ReqProp, PublishFun, UntilFun, Timeout, Acc}
                         ,current_msg_id = MsgId
 
                         ,confirm_timeout_ref = start_confirm_timeout(Timeout)
-                        ,confirm_start_time = os:timestamp()
+                        ,confirm_start_time = kz_time:start_time()
                         ,timeout = Timeout
                         ,method = 'call_collect'
 
@@ -675,7 +703,7 @@ handle_call({'call_collect', ReqProp, PublishFun, UntilFun, Timeout, Acc}
                         ,neg_resp_count = 0
                         ,current_msg_id = MsgId
                         ,req_timeout_ref = start_req_timeout(Timeout)
-                        ,req_start_time = os:timestamp()
+                        ,req_start_time = kz_time:start_time()
                         ,callid = CallId
                         }
             };
@@ -695,7 +723,7 @@ handle_call({'publish', ReqProp0, PublishFun}
     case publish_api(PublishFun, ReqProp) of
         'ok' when Confirm =:= 'true' ->
             {'noreply', State#state{confirm_timeout_ref = start_confirm_timeout(default_timeout())
-                                   ,confirm_start_time = os:timestamp()
+                                   ,confirm_start_time = kz_time:start_time()
                                    ,method = 'publish'
                                    ,reply_to=From
                                    }};
@@ -710,7 +738,7 @@ handle_call({'publish', ReqProp, PublishFun}
            ,{Pid, _}=From
            ,#state{confirms=Confirm}=State
            ) ->
-    _ = kz_util:put_callid(ReqProp),
+    _ = kz_log:put_callid(ReqProp),
     case publish_api(PublishFun, ReqProp) of
         'ok' when Confirm =:= 'true' ->
             lager:debug("published message ~s for ~p", [kz_api:msg_id(ReqProp), Pid]),
@@ -720,10 +748,10 @@ handle_call({'publish', ReqProp, PublishFun}
                         ,client_from = From
 
                         ,confirm_timeout_ref = start_confirm_timeout(default_timeout())
-                        ,confirm_start_time = os:timestamp()
+                        ,confirm_start_time = kz_time:start_time()
                         ,method = 'publish'
 
-                        ,req_start_time = os:timestamp()
+                        ,req_start_time = kz_time:start_time()
                         }
             };
         'ok' ->
@@ -747,7 +775,7 @@ handle_cast({'gen_listener', {'created_queue', Q}}, #state{defer='undefined'}=St
     lager:debug("AMQP queue created ~s", [Q]),
     {'noreply', State#state{queue=Q}};
 handle_cast({'gen_listener', {'created_queue', Q}}, #state{defer={Call,From}}=State) ->
-    kz_util:put_callid(element(2, Call)),
+    kz_log:put_callid(element(2, Call)),
     lager:debug("resuming deferred call"),
     case handle_call(Call, From, State#state{queue=Q}) of
         {'reply', Reply, NewState} ->
@@ -764,7 +792,7 @@ handle_cast({'gen_listener', {'return', JObj, BasicReturn}}
                   ,client_from = From
                   ,confirms=Confirms
                   }=State) ->
-    _ = kz_util:put_callid(JObj),
+    _ = kz_log:put_callid(JObj),
     case kz_api:msg_id(JObj) of
         MsgId ->
             lager:debug("published message was returned from the broker"),
@@ -799,6 +827,19 @@ handle_cast({'gen_listener',{'channel_flow', 'false'}}, State) ->
 handle_cast({'gen_listener',{'channel_flow_control', Active}}, State) ->
     lager:debug("channel flow is ~p", [Active]),
     {'noreply', State#state{flow=Active}};
+
+handle_cast('check_in', #state{client_pid='undefined'
+                              ,client_ref='undefined'
+                              }=State) ->
+    {'noreply', State};
+handle_cast('check_in', #state{client_pid=RelayPid
+                              ,client_ref=Ref
+                              ,client_from='relay'
+                              }=State) ->
+    erlang:demonitor(Ref, ['flush']),
+    lager:debug("stopping relay to ~p", [RelayPid]),
+    {'noreply', reset(State)};
+
 handle_cast(_Msg, State) ->
     lager:debug("unhandled cast: ~p", [_Msg]),
     {'noreply', State, 'hibernate'}.
@@ -814,7 +855,7 @@ handle_info({'DOWN', ClientRef, 'process', _Pid, _Reason}
                   ,callid = CallId
                   }=State
            ) ->
-    kz_util:put_callid(CallId),
+    kz_log:put_callid(CallId),
     lager:debug("requestor processes ~p  died while waiting for msg id ~s", [_Pid, _MsgId]),
     {'noreply', reset(State), 'hibernate'};
 handle_info('timeout'
@@ -854,7 +895,7 @@ handle_info({'timeout', ReqRef, 'req_timeout'}
                   ,defer_response=ReservedJObj
                   }=State
            ) ->
-    kz_util:put_callid(CallId),
+    kz_log:put_callid(CallId),
     case kz_term:is_empty(ReservedJObj) of
         'true' ->
             lager:debug("request timeout exceeded for msg id: ~s and client: ~p", [_MsgId, _Pid]),
@@ -871,7 +912,7 @@ handle_info({'timeout', ReqRef, 'req_timeout'}
                   ,callid=CallId
                   }=State
            ) ->
-    kz_util:put_callid(CallId),
+    kz_log:put_callid(CallId),
     lager:debug("req timeout for call_collect"),
     gen_server:reply(From, {'timeout', Resps}),
     {'noreply', reset(State), 'hibernate'};
@@ -936,7 +977,7 @@ reset(#state{req_timeout_ref = ReqRef
             ,client_ref = ClientRef
             ,confirm_timeout_ref = ConfirmRef
             }=State) ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
     _ = case is_reference(ReqRef) of
             'true' -> erlang:cancel_timer(ReqRef);
             'false' -> 'ok'
@@ -993,7 +1034,7 @@ maybe_convert_to_proplist(Req) ->
 maybe_set_msg_id(Props) ->
     case kz_api:msg_id(Props) of
         'undefined' ->
-            props:set_value(<<"Msg-ID">>, kz_binary:rand_hex(8), Props);
+            props:set_value(?KEY_MSG_ID, kz_binary:rand_hex(8), Props);
         _MsgId ->
             Props
     end.
@@ -1009,11 +1050,11 @@ publish_api(PublishFun, ReqProps) ->
     catch
         ?STACKTRACE('error', 'badarg', ST)
         lager:error("badarg error when publishing:"),
-        kz_util:log_stacktrace(ST),
+        kz_log:log_stacktrace(ST),
         {'error', 'badarg'};
         ?STACKTRACE('error', 'function_clause', ST)
         lager:error("function clause error when publishing:"),
-        kz_util:log_stacktrace(ST),
+        kz_log:log_stacktrace(ST),
         lager:error("pub fun: ~p", [PublishFun]),
         {'error', 'function_clause'};
         _E:R ->
@@ -1094,7 +1135,7 @@ handle_method_confirm('request', #'basic.ack'{}, #state{client_pid=ClientPid
                                                        }=State) ->
     lager:debug("request for msg id ~s for ~p was confirmed by broker", [MsgId, ClientPid]),
     NewState = State#state{req_timeout_ref = start_req_timeout(Timeout)
-                          ,req_start_time = os:timestamp()
+                          ,req_start_time = kz_time:start_time()
                           },
     {'noreply', NewState};
 
@@ -1112,7 +1153,7 @@ handle_method_confirm('call_collect', #'basic.ack'{}, #state{client_pid=ClientPi
                                                             }=State) ->
     lager:debug("call collect for msg id ~s for ~p was confirmed by broker", [MsgId, ClientPid]),
     NewState = State#state{req_timeout_ref = start_req_timeout(Timeout)
-                          ,req_start_time = os:timestamp()
+                          ,req_start_time = kz_time:start_time()
                           },
     {'noreply', NewState};
 
@@ -1134,14 +1175,15 @@ handle_payload(MsgId, JObj
                      ,req_start_time = StartTime
                      ,neg_resp_count = NegCount
                      ,neg_resp_threshold = NegThreshold
-                     }=State) when NegCount < NegThreshold ->
-    _ = kz_util:put_callid(JObj),
+                     }=State
+              ) when NegCount < NegThreshold ->
+    _ = kz_log:put_callid(JObj),
 
     case VFun(JObj) of
         'true' ->
             case kz_json:is_true(<<"Defer-Response">>, JObj) of
                 'false' ->
-                    lager:debug("response for msg id ~s took ~b micro to return", [MsgId, timer:now_diff(os:timestamp(), StartTime)]),
+                    lager:debug("response for msg id ~s took ~b micro to return", [MsgId, kz_time:elapsed_us(StartTime)]),
                     gen_server:reply(From, {'ok', JObj}),
                     {'noreply', reset(State), 'hibernate'};
                 'true' ->
@@ -1170,7 +1212,7 @@ handle_payload(MsgId, JObj
                      }=State)
   when is_list(Resps)
        andalso is_function(UntilFun, 2) ->
-    _ = kz_util:put_callid(JObj),
+    _ = kz_log:put_callid(JObj),
     lager:debug("recv message ~s", [MsgId]),
     Responses = [JObj | Resps],
     try UntilFun(Responses, Acc) of
@@ -1197,8 +1239,9 @@ handle_payload(MsgId, JObj
                      ,client_cfun = UntilFun
                      ,responses = Resps
                      ,req_start_time = StartTime
-                     }=State) when is_list(Resps) ->
-    _ = kz_util:put_callid(JObj),
+                     }=State
+              ) when is_list(Resps) ->
+    _ = kz_log:put_callid(JObj),
     lager:debug("recv message ~s", [MsgId]),
     Responses = [JObj | Resps],
     try UntilFun(Responses) of
@@ -1221,12 +1264,12 @@ handle_payload(_MsgId, JObj
               ,#state{current_msg_id='undefined'}=State
               ) ->
     lager:debug("received unexpected message with old/expired message id: ~s (~s)"
-               ,[_MsgId, kz_util:find_callid(JObj)]
+               ,[_MsgId, kz_log:find_callid(JObj)]
                ),
     {'noreply', State};
 handle_payload(_MsgId, JObj
               ,#state{current_msg_id=_CurrMsgId}=State
               ) ->
-    _ = kz_util:put_callid(JObj),
+    _ = kz_log:put_callid(JObj),
     lager:debug("received unexpected message with old/expired message id: ~s, waiting for ~s", [_MsgId, _CurrMsgId]),
     {'noreply', State}.

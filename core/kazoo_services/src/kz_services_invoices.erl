@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_services_invoices).
@@ -96,9 +100,7 @@ do_annotate(Services, [{'undefined', ProposedInvoice}|TentativeInvoices], Invoic
     Items = kz_services_items:annotate(CurrentItems, ProposedItems),
     ActivationItems = kz_services_activation_items:create(Items),
     Setters = [{fun kz_services_invoice:set_items/2, Items}
-              ,{fun kz_services_invoice:set_activation_charges/2
-               ,kz_services_activation_items:create(ActivationItems)
-               }
+              ,{fun kz_services_invoice:set_activation_charges/2, ActivationItems}
               ],
     do_annotate(Services
                ,TentativeInvoices
@@ -108,10 +110,9 @@ do_annotate(Services, [{CurrentInvoice, ProposedInvoice}|TentativeInvoices], Inv
     CurrentItems = kz_services_invoice:items(CurrentInvoice),
     ProposedItems = kz_services_invoice:items(ProposedInvoice),
     Items = kz_services_items:annotate(CurrentItems, ProposedItems),
+    ActivationItems = kz_services_activation_items:create(Items),
     Setters = [{fun kz_services_invoice:set_items/2, Items}
-              ,{fun kz_services_invoice:set_activation_charges/2
-               ,kz_services_activation_items:create(Items)
-               }
+              ,{fun kz_services_invoice:set_activation_charges/2, ActivationItems}
               ],
     do_annotate(Services
                ,TentativeInvoices

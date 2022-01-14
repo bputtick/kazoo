@@ -23,7 +23,6 @@ Key | Description | Type | Default | Required | Support Level
 `call_forward` | The device call forward parameters | `object()` |   | `false` |  
 `call_recording` | endpoint recording settings | [#/definitions/call_recording](#call_recording) |   | `false` |  
 `call_restriction` | Device level call restrictions for each available number classification | `object()` | `{}` | `false` |  
-`call_waiting` | Parameters for server-side call waiting | [#/definitions/call_waiting](#call_waiting) |   | `false` |  
 `caller_id` | The device caller ID parameters | [#/definitions/caller_id](#caller_id) |   | `false` |  
 `caller_id_options.outbound_privacy` | Determines what appears as caller id for offnet outbound calls. Values: full - hides name and number; name - hides only name; number - hides only number; none - hides nothing | `string('full' | 'name' | 'number' | 'none')` |   | `false` |  
 `caller_id_options` | custom properties for configuring caller_id | `object()` |   | `false` |  
@@ -37,6 +36,8 @@ Key | Description | Type | Default | Required | Support Level
 `enabled` | Determines if the user is currently enabled | `boolean()` | `true` | `false` | `supported`
 `feature_level` | The user level for assigning feature sets | `string()` |   | `false` |  
 `first_name` | The first name of the user | `string(1..128)` |   | `true` | `supported`
+`flags.[]` |   | `string()` |   | `false` | `supported`
+`flags` | Flags set by external applications | `array(string())` |   | `false` | `supported`
 `formatters` | Schema for request formatters | `object()` |   | `false` |  
 `hotdesk.enabled` | Determines if the user has hotdesking enabled | `boolean()` | `false` | `false` |  
 `hotdesk.id` | The users hotdesk id | `string(0..15)` |   | `false` |  
@@ -101,15 +102,6 @@ Key | Description | Type | Default | Required | Support Level
 `any` | settings for calls from any network | [#/definitions/call_recording.parameters](#call_recordingparameters) |   | `false` |  
 `offnet` | settings for calls from offnet networks | [#/definitions/call_recording.parameters](#call_recordingparameters) |   | `false` |  
 `onnet` | settings for calls from onnet networks | [#/definitions/call_recording.parameters](#call_recordingparameters) |   | `false` |  
-
-### call_waiting
-
-Parameters for server-side call waiting
-
-
-Key | Description | Type | Default | Required | Support Level
---- | ----------- | ---- | ------- | -------- | -------------
-`enabled` | Determines if server side call waiting is enabled/disabled | `boolean()` |   | `false` |  
 
 ### caller_id
 

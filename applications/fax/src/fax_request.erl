@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(fax_request).
@@ -120,7 +125,7 @@ handle_channel_event(JObj, Props) ->
 %%------------------------------------------------------------------------------
 -spec init([kapps_call:call() | kz_json:object() | fax_storage()]) -> {'ok', state()}.
 init([Call, JObj, Storage]) ->
-    kapps_call:put_callid(Call),
+    _ = kapps_call:put_callid(Call),
     gen_listener:cast(self(), 'start_action'),
     {'ok', #state{call = Call
                  ,action = get_action(JObj)
@@ -291,7 +296,7 @@ start_receive_fax(#state{call=Call
     ResourceFlag = kapps_call:custom_channel_var(<<"Resource-Fax-Option">>, Call),
     LocalFile = get_fs_filename(NewState),
     send_status(NewState, list_to_binary(["New Fax from ", kapps_call:caller_id_number(Call)]), ?FAX_START, 'undefined'),
-    kapps_call_command:answer(Call),
+    _ = kapps_call_command:b_answer_now(Call),
     lager:debug("receive fax ~s - t.38 ~p / ~p", [FaxId, ResourceFlag, ReceiveFlag]),
     kapps_call_command:receive_fax(ResourceFlag, ReceiveFlag, LocalFile, Call),
     {'noreply', NewState}.
@@ -301,7 +306,7 @@ get_fax_storage(Call) ->
     AccountId = kapps_call:account_id(Call),
     {Year, Month, _} = erlang:date(),
     AccountMODb = kazoo_modb:get_modb(AccountId, Year, Month),
-    FaxDb = kz_util:format_account_modb(AccountMODb, 'encoded'),
+    FaxDb = kzs_util:format_account_modb(AccountMODb, 'encoded'),
     FaxId = list_to_binary([kz_term:to_binary(Year)
                            ,kz_date:pad_month(Month)
                            ,"-"
@@ -458,7 +463,7 @@ end_receive_fax(#state{}=State) ->
 
 -spec store_document(state()) -> kz_term:pid_ref().
 store_document(#state{}=State) ->
-    kz_util:spawn_monitor(fun store_document/2, [self(), State]).
+    kz_process:spawn_monitor(fun store_document/2, [self(), State]).
 
 -spec store_document(pid(), state() ) -> 'ok'.
 store_document(Pid, #state{fax_result=JObj
@@ -475,7 +480,7 @@ store_document(Pid, #state{fax_result=JObj
 
 -spec store_attachment(state()) -> kz_term:pid_ref().
 store_attachment(#state{}=State) ->
-    kz_util:spawn_monitor(fun store_attachment/2, [self(), State]).
+    kz_process:spawn_monitor(fun store_attachment/2, [self(), State]).
 
 -spec store_attachment(pid(), state()) -> 'ok'.
 store_attachment(Pid, #state{call=Call
@@ -508,9 +513,9 @@ store_attachment(Pid, #state{call=Call
     end.
 
 -spec check_fax_attachment(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary())->
-                                  {'ok', kz_json:object()} |
-                                  {'missing', kz_json:object()} |
-                                  {'error', any()}.
+          {'ok', kz_json:object()} |
+          {'missing', kz_json:object()} |
+          {'error', any()}.
 check_fax_attachment(Modb, DocId, Name) ->
     case kz_datamgr:open_doc(Modb, DocId) of
         {'ok', JObj} ->
@@ -527,8 +532,8 @@ get_fs_filename(#state{storage=#fax_storage{attachment_id=AttachmentId}}) ->
     <<LocalPath/binary, AttachmentId/binary>>.
 
 -spec create_fax_doc(kz_json:object(), state()) ->
-                            {'ok', kz_json:object()} |
-                            {'error', any()}.
+          {'ok', kz_json:object()} |
+          {'error', any()}.
 create_fax_doc(JObj, #state{owner_id = OwnerId
                            ,faxbox_id = FaxBoxId
                            ,fax_notify = Notify
@@ -555,6 +560,7 @@ create_fax_doc(JObj, #state{owner_id = OwnerId
               [{<<"name">>, Name}
               ,{<<"to_number">>, kapps_call:request_user(Call)}
               ,{<<"from_number">>, kapps_call:from_user(Call)}
+              ,{<<"from_name">>, kapps_call:caller_id_name(Call)}
               ,{<<"description">>, <<"fax document received">>}
               ,{<<"source_type">>, <<"incoming_fax">>}
               ,{<<"folder">>, <<"inbox">>}
@@ -574,7 +580,7 @@ create_fax_doc(JObj, #state{owner_id = OwnerId
                                       ,FaxDb
                                       ,[{'type', <<"fax">>}]
                                       ),
-    kazoo_modb:save_doc(kapps_call:account_id(Call), Doc).
+    kazoo_modb:save_doc(FaxDb, Doc).
 
 -spec rx_result(kz_json:object()) -> kz_json:object().
 rx_result(JObj) ->

@@ -1,11 +1,17 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc Conversion of types
 %%% @author James Aimonetti
 %%% @author Karl Anderson
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_binary).
+
+-export([format/2]).
 
 -export([rand_hex/1
         ,hexencode/1
@@ -36,6 +42,16 @@
 -export([pos/2, closests/2]).
 
 -include_lib("kazoo_stdlib/include/kz_types.hrl").
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec format(string() | binary(), [term()]) -> binary().
+format(Format, Args) ->
+    kz_term:to_binary(
+      io_lib:format(Format, Args)
+     ).
 
 %%------------------------------------------------------------------------------
 %% @doc Ensure a binary is a minimum size, padding it if not with a given

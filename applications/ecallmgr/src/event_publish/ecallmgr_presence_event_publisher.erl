@@ -1,6 +1,11 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc Receives PRESENCE_IN event
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_presence_event_publisher).
@@ -25,9 +30,10 @@ init() ->
 
 -spec publish_presence(map()) -> any().
 publish_presence(#{call_id := UUID, payload := _JObj} = Ctx) ->
-    kz_util:put_callid(UUID),
+    kz_log:put_callid(UUID),
     Routines = [fun check_proto/1
                ,fun check_node/1
+               ,fun check_presence_id/1
                ],
     case lists:all(fun(F) -> F(Ctx) end, Routines) of
         'true' -> build_presence_event(UUID, Ctx);
@@ -52,11 +58,17 @@ check_node(#{payload := JObj}) ->
     case ?RESTRICTED_PUBLISHING
         andalso kz_call_event:custom_channel_var(JObj, <<"Ecallmgr-Node">>)
     of
-        'false' -> 'false';
-        'undefined' -> true;
-        Node -> true;
-        _Other -> 'false'
+        'false' -> 'true';
+        'undefined' -> 'true';
+        Node -> 'true';
+        _Other ->
+            lager:debug("check node failed ~p ", [_Other]),
+            'false'
     end.
+
+-spec check_presence_id(map()) -> boolean().
+check_presence_id(#{payload := JObj}) ->
+    kz_call_event:custom_channel_var(JObj, <<"Presence-ID">>) =/= 'undefined'.
 
 -spec realm(kz_json:object()) -> kz_term:ne_binary().
 realm(JObj) ->
@@ -64,7 +76,10 @@ realm(JObj) ->
                               ,<<"variable_sip_invite_domain">>
                               ,<<"variable_sip_auth_realm">>
                               ,<<"variable_sip_to_host">>
-                              ], JObj, ?DEFAULT_REALM).
+                              ]
+                             ,JObj
+                             ,?DEFAULT_REALM
+                             ).
 
 -spec get_user_realm(kz_json:object()) -> {kz_term:ne_binary(), kz_term:ne_binary()}.
 get_user_realm(JObj) ->
@@ -75,10 +90,23 @@ get_user_realm(JObj) ->
 
 -spec from(kz_json:object()) -> kz_term:ne_binary().
 from(JObj) ->
-    kz_json:get_first_defined([<<"from">>
+    kz_json:get_first_defined([?GET_CCV(<<"Presence-ID">>)
+                              ,<<"from">>
                               ,<<"variable_presence_id">>
                               ,<<"Channel-Presence-ID">>
-                              ], JObj).
+                              ]
+                             ,JObj
+                             ).
+
+-spec presence_id(kz_json:object(), kz_term:ne_binary()) -> kz_term:ne_binary().
+presence_id(JObj, Realm) ->
+    PresenceId = kz_json:get_first_defined([<<"Channel-Presence-ID">>
+                                           ,<<"variable_presence_id">>
+                                           ]
+                                          ,JObj
+                                          ),
+    [Id|_] = binary:split(PresenceId, <<"@">>),
+    <<Id/binary, "@", Realm/binary>>.
 
 -spec to_user(kz_json:object()) -> kz_term:ne_binary().
 to_user(JObj) ->
@@ -87,11 +115,15 @@ to_user(JObj) ->
 to_user(<<"initiator">>, JObj) ->
     kz_json:get_first_defined([<<"Caller-Destination-Number">>
                               ,<<"variable_sip_to_user">>
-                              ], JObj);
+                              ]
+                             ,JObj
+                             );
 to_user(<<"recipient">>, JObj) ->
     kz_json:get_first_defined([<<"Caller-Caller-ID-Number">>
                               ,<<"variable_sip_from_user">>
-                              ], JObj).
+                              ]
+                             ,JObj
+                             ).
 
 -spec expires(kz_term:ne_binary()) -> integer().
 expires(<<"early">>) -> 0;
@@ -104,7 +136,7 @@ build_presence_event(UUID, #{payload := JObj}) ->
     FromTag = kz_evt_freeswitch:from_tag(JObj),
 
     {FromUser, Realm} = get_user_realm(JObj),
-    PresenceId = <<FromUser/binary, "@", Realm/binary>>,
+    PresenceId = presence_id(JObj, Realm),
     PresenceURI =  <<"sip:", PresenceId/binary>>,
 
     ToUser =  to_user(JObj),
@@ -139,7 +171,7 @@ build_presence_event(UUID, #{payload := JObj}) ->
                 ]),
     lager:debug("sending presence ~s to ~s/~s in realm ~s", [State, FromUser, ToUser, Realm]),
     _ = maybe_delay(State),
-    kz_amqp_worker:cast(Payload, fun kapi_presence:publish_dialog/1).
+    kapi_presence:publish_dialog(Payload).
 
 maybe_delay(<<"terminated">>) ->
     timer:sleep(?MILLISECONDS_IN_SECOND);

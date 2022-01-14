@@ -1,14 +1,19 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
 %%% @author Karl Anderson
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_originate).
 -behaviour(gen_listener).
 
--export([start_link/3]).
+-export([start_link/2]).
 -export([handle_originate_execute/2]).
 -export([handle_call_events/2]).
 -export([init/1
@@ -35,7 +40,6 @@
                ,dialstrings :: kz_term:api_binary()
                ,queue :: kz_term:api_binary()
                ,control_pid :: kz_term:api_pid()
-               ,control_context :: map() %% this is the Context for the call control process, if necessary
                ,tref :: kz_term:api_reference()
                ,fetch_id = kz_binary:rand_hex(16)
                }).
@@ -65,8 +69,8 @@
 %% @doc Starts the server.
 %% @end
 %%------------------------------------------------------------------------------
--spec start_link(atom(), kz_json:object(), map()) -> kz_types:startlink_ret().
-start_link(Node, JObj, Context) ->
+-spec start_link(atom(), kz_json:object()) -> kz_types:startlink_ret().
+start_link(Node, JObj) ->
     gen_listener:start_link(?SERVER
                            ,[{'bindings', ?BINDINGS}
                             ,{'responders', ?RESPONDERS}
@@ -74,7 +78,7 @@ start_link(Node, JObj, Context) ->
                             ,{'queue_options', ?QUEUE_OPTIONS}
                             ,{'consume_options', ?CONSUME_OPTIONS}
                             ]
-                           ,[Node, JObj, Context]
+                           ,[Node, JObj]
                            ).
 
 %%------------------------------------------------------------------------------
@@ -123,10 +127,9 @@ handle_originate_execute(JObj, Props) ->
 %% @doc Initializes the server.
 %% @end
 %%------------------------------------------------------------------------------
--spec init([node() | kz_json:object() | map()]) -> {'stop', 'normal'} |
-                                                   {'ok', state()}.
-init([Node, JObj, Context]) ->
-    _ = kz_util:put_callid(JObj),
+-spec init([node() | kz_json:object()]) -> {'stop', 'normal'} | {'ok', state()}.
+init([Node, JObj]) ->
+    _ = kz_log:put_callid(JObj),
     ServerId = kz_api:server_id(JObj),
     ControllerQ = kz_api:queue_id(JObj),
     _ = bind_to_events(Node),
@@ -134,14 +137,12 @@ init([Node, JObj, Context]) ->
         'false' ->
             Error = <<"originate failed to execute as JObj did not validate">>,
             publish_error(Error, 'undefined', JObj, ServerId),
-            ecallmgr_call_sup:release_context(Context),
             {'stop', 'normal'};
         'true' ->
             {'ok', #state{node=Node
                          ,originate_req=JObj
                          ,server_id=ServerId
                          ,controller_q = ControllerQ
-                         ,control_context=Context
                          }}
     end.
 
@@ -178,7 +179,7 @@ handle_cast({'create_uuid'}, #state{node=Node
                                    ,uuid='undefined'
                                    }=State) ->
     UUID = {_, Id} = create_uuid(JObj, Node),
-    kz_util:put_callid(Id),
+    kz_log:put_callid(Id),
     lager:debug("created uuid ~p", [UUID]),
     case kz_json:is_true(<<"Start-Control-Process">>, JObj, 'true')
         andalso start_control_process(State#state{uuid=UUID}) of
@@ -198,10 +199,9 @@ handle_cast({'get_originate_action'}, #state{originate_req=JObj
                                             ,node=Node
                                             }=State) ->
     gen_listener:cast(self(), {'build_originate_args'}),
-    ApplicationName = kz_json:get_value(<<"Application-Name">>, JObj),
-    Action = get_originate_action(ApplicationName, JObj),
     UseNode = maybe_update_node(JObj, Node),
-    lager:debug("maybe updating node from ~s to ~s", [Node, UseNode]),
+    ApplicationName = kz_json:get_value(<<"Application-Name">>, JObj),
+    Action = get_originate_action(ApplicationName, JObj, UseNode),
     lager:debug("originate action: ~s", [Action]),
     {'noreply', State#state{action=Action
                            ,app=ApplicationName
@@ -290,7 +290,7 @@ handle_cast({'originate_execute'}, #state{dialstrings=Dialstrings
             _ = publish_originate_resp(ServerId, JObj, CallId),
             {'stop', 'normal', State#state{control_pid='undefined'}};
         {'ok', CallId} ->
-            kz_util:put_callid(CallId),
+            kz_log:put_callid(CallId),
             lager:debug("originate is executing, waiting for completion"),
             erlang:monitor_node(Node, 'true'),
             bind_to_call_events(CallId),
@@ -392,18 +392,32 @@ code_change(_OldVsn, State, _Extra) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec get_originate_action(kz_term:ne_binary(), kz_json:object()) -> kz_term:ne_binary().
-get_originate_action(<<"fax">>, JObj) ->
+-spec cache_fax_file(kz_term:ne_binary(), node()) -> {'ok' | 'error', kz_term:ne_binary()}.
+cache_fax_file(File, Node) ->
+    Self = self(),
+    Fun = fun(Res, Reply) ->
+                  lager:debug("cache fax file result : ~p", [{Res, Reply}]),
+                  Self ! {cache_fax_file, {Res, Reply}}
+          end,
+    {ok, JobId} = freeswitch:bgapi(Node, 'http_get', <<"{prefetch=true}", File/binary>>, Fun),
+    lager:debug("waiting for cache fax file result ~s", [JobId]),
+    receive
+        {cache_fax_file, Reply} -> Reply
+    end.
+
+-spec get_originate_action(kz_term:ne_binary(), kz_json:object(), node()) -> kz_term:ne_binary().
+get_originate_action(<<"fax">>, JObj, Node) ->
     lager:debug("got originate with action fax"),
     Data = kz_json:get_value(<<"Application-Data">>, JObj),
-    <<"&txfax(${http_get(", Data/binary, ")})">>;
-get_originate_action(<<"transfer">>, JObj) ->
+    {'ok', File} = cache_fax_file(Data, Node),
+    <<"&txfax(", File/binary, ")">>;
+get_originate_action(<<"transfer">>, JObj, _Node) ->
     get_transfer_action(JObj, kz_json:get_value([<<"Application-Data">>, <<"Route">>], JObj));
-get_originate_action(<<"bridge">>, JObj) ->
+get_originate_action(<<"bridge">>, JObj, _Node) ->
     lager:debug("got originate with action bridge"),
     CallId = kz_json:get_binary_value(<<"Existing-Call-ID">>, JObj),
     intercept_unbridged_only(CallId, JObj);
-get_originate_action(<<"eavesdrop">>, JObj) ->
+get_originate_action(<<"eavesdrop">>, JObj, _Node) ->
     lager:debug("got originate with action eavesdrop"),
     EavesdropCallId = kz_json:get_binary_value(<<"Eavesdrop-Call-ID">>, JObj),
     case ecallmgr_fs_channel:node(EavesdropCallId) of
@@ -414,7 +428,7 @@ get_originate_action(<<"eavesdrop">>, JObj) ->
             gen_listener:cast(self(), {'maybe_update_node', N}),
             get_eavesdrop_action(JObj)
     end;
-get_originate_action(_, _) ->
+get_originate_action(_, _, _) ->
     lager:debug("got originate with action park"),
     ?ORIGINATE_PARK.
 
@@ -462,7 +476,9 @@ maybe_update_node(JObj, Node) ->
         CallId ->
             case ecallmgr_fs_channel:node(CallId) of
                 {'error', _} -> Node;
-                {'ok', N} -> N
+                {'ok', Node} -> Node;
+                {'ok', N} -> lager:debug("updating node from ~s to ~s", [Node, N]),
+                             N
             end
     end.
 
@@ -495,7 +511,7 @@ build_originate_args(Action, State, JObj, FetchId) ->
     end.
 
 -spec build_originate_args_from_endpoints(kz_term:ne_binary(), kz_json:objects(), kz_json:object(), kz_term:ne_binary()) ->
-                                                 kz_term:ne_binary().
+          kz_term:ne_binary().
 build_originate_args_from_endpoints(Action, Endpoints, JObj, FetchId) ->
     lager:debug("building originate command arguments"),
     DialSeparator = ecallmgr_util:get_dial_separator(JObj, Endpoints),
@@ -548,37 +564,11 @@ add_loopback('false') ->
     ].
 
 -spec originate_execute(atom(), kz_term:ne_binary(), pos_integer()) ->
-                               {'ok', kz_term:ne_binary()} |
-                               {'error', kz_term:ne_binary() | 'timeout' | 'crash'}.
-originate_execute(Node, Dialstrings, Timeout) ->
+          {'ok', kz_term:ne_binary()} |
+          {'error', kz_term:ne_binary() | 'timeout' | 'crash'}.
+originate_execute(Node, Dialstrings, _Timeout) ->
     lager:debug("executing originate on ~s: ~s", [Node, Dialstrings]),
-    case freeswitch:api(Node
-                       ,'originate'
-                       ,kz_term:to_list(Dialstrings)
-                       ,Timeout * ?MILLISECONDS_IN_SECOND + 2000
-                       )
-    of
-        {'ok', <<"+OK ", ID/binary>>} ->
-            UUID = kz_binary:strip(binary:replace(ID, <<"\n">>, <<>>)),
-            Media = get('hold_media'),
-            _Pid = kz_util:spawn(fun set_music_on_hold/3, [Node, UUID, Media]),
-            {'ok', UUID};
-        {'ok', Other} ->
-            lager:debug("recv other 'ok': ~s", [Other]),
-            {'error', kz_binary:strip(binary:replace(Other, <<"\n">>, <<>>))};
-        {'error', Error} when is_binary(Error) ->
-            lager:debug("error originating: ~s", [Error]),
-            {'error', kz_binary:strip(binary:replace(Error, <<"\n">>, <<>>))};
-        {'error', _Reason} ->
-            lager:debug("error originating: ~p", [_Reason]),
-            {'error', <<"unspecified">>}
-    end.
-
--spec set_music_on_hold(atom(), kz_term:ne_binary(), kz_term:api_binary()) -> 'ok'.
-set_music_on_hold(_, _, 'undefined') -> 'ok';
-set_music_on_hold(Node, UUID, Media) ->
-    Resp = ecallmgr_fs_command:set(Node, UUID, [{<<"Hold-Media">>, Media}]),
-    lager:debug("setting Hold-Media resp: ~p", [Resp]).
+    freeswitch:async_api(Node, 'originate', Dialstrings).
 
 -spec bind_to_call_events(kz_term:ne_binary()) -> 'ok'.
 bind_to_call_events(CallId) ->
@@ -595,7 +585,7 @@ unbind_from_call_events() ->
 
 -spec update_uuid(kz_term:api_binary(), kz_term:ne_binary()) -> 'ok'.
 update_uuid(OldUUID, NewUUID) ->
-    kz_util:put_callid(NewUUID),
+    kz_log:put_callid(NewUUID),
     lager:debug("updating call id from ~s to ~s", [OldUUID, NewUUID]),
     unbind_from_call_events(),
     bind_to_call_events(NewUUID),
@@ -777,8 +767,8 @@ find_max_endpoint_timeout([EP|EPs], T) ->
     end.
 
 -spec start_control_process(state()) ->
-                                   {'ok', state()} |
-                                   {'error', any()}.
+          {'ok', state()} |
+          {'error', any()}.
 start_control_process(#state{originate_req=JObj
                             ,node=Node
                             ,uuid={_, Id}=UUID
@@ -786,14 +776,13 @@ start_control_process(#state{originate_req=JObj
                             ,server_id=ServerId
                             ,fetch_id=FetchId
                             ,control_pid='undefined'
-                            ,control_context=Context
                             }=State) ->
-    Ctx = Context#{node => Node
-                  ,call_id => Id
-                  ,fetch_id => FetchId
-                  ,controller_q => ControllerQ
-                  ,initial_ccvs => kz_json:new()
-                  },
+    Ctx = #{node => Node
+           ,call_id => Id
+           ,fetch_id => FetchId
+           ,controller_q => ControllerQ
+           ,initial_ccvs => kz_json:new()
+           },
     case ecallmgr_call_sup:start_control_process(Ctx) of
         {'ok', CtrlPid} when is_pid(CtrlPid) ->
             _ = maybe_send_originate_uuid(UUID, CtrlPid, State),

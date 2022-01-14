@@ -1,11 +1,16 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc When connecting to a FreeSWITCH node, we create three processes: one to
 %%% handle authentication (directory) requests; one to handle route (dialplan)
 %%% requests, and one to monitor the node and various stats about the node.
 %%%
 %%%
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_fs_pinger).
@@ -52,7 +57,7 @@ start_link(Node, Options) ->
 %%------------------------------------------------------------------------------
 -spec init([atom() | kz_term:proplist()]) -> {'ok', state()}.
 init([Node, Props]) ->
-    kz_util:put_callid(Node),
+    kz_log:put_callid(Node),
     self() ! 'initialize_pinger',
     lager:info("node ~s not responding, periodically retrying connection", [Node]),
     {'ok', #state{node=Node, options=Props}}.
@@ -97,6 +102,9 @@ handle_info({'flush_channels', Node}, State) ->
     ecallmgr_fs_channels:flush_node(Node),
     ecallmgr_fs_conferences:flush_node(Node),
     {'noreply', State};
+handle_info('check_node_status', #state{timeout=Timeout}=State)
+  when Timeout > ?MILLISECONDS_IN_MINUTE * 15 ->
+    handle_info('check_node_status', State#state{timeout=?MILLISECONDS_IN_MINUTE});
 handle_info('check_node_status', #state{node=Node, timeout=Timeout}=State) ->
     case net_adm:ping(Node) of
         'pong' ->
@@ -106,9 +114,9 @@ handle_info('check_node_status', #state{node=Node, timeout=Timeout}=State) ->
             'ok' = ecallmgr_fs_nodes:nodeup(Node),
             {'stop', 'normal', State};
         _Else ->
-                                                %            lager:debug("node ~s not responding, waiting ~b seconds to ping again", [Node, Timeout div ?MILLISECONDS_IN_SECOND]),
+            lager:debug("node ~s not responding, waiting ~b seconds to ping again", [Node, Timeout div ?MILLISECONDS_IN_SECOND]),
             erlang:send_after(Timeout, self(), 'check_node_status'),
-            {'noreply', State, 'hibernate'}
+            {'noreply', State#state{timeout=Timeout+?MILLISECONDS_IN_SECOND}, 'hibernate'}
     end;
 handle_info('exit', State) ->
     {stop, normal, State};

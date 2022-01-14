@@ -1,11 +1,17 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kzd_limits).
 
--export([new/1]).
+-export([new/1
+        ,type/0
+        ]).
 -export([enabled/1, enabled/2
         ,set_enabled/2, set_pvt_enabled/2
         ]).
@@ -66,6 +72,9 @@
 -export([allotments/1, allotments/2
         ,set_allotments/2
         ]).
+-export([pvt_allotments/1, pvt_allotments/2
+        ,set_pvt_allotments/2
+        ]).
 -export([inbound_channels_per_did_rules/1, inbound_channels_per_did_rules/2]).
 
 -include("kz_documents.hrl").
@@ -90,14 +99,17 @@ new(Account) ->
     TStamp = kz_time:now_s(),
     kz_json:from_list(
       [{<<"_id">>, <<"limits">>}
-      ,{<<"pvt_account_db">>, kz_util:format_account_db(Account)}
-      ,{<<"pvt_account_id">>, kz_util:format_account_id(Account)}
-      ,{<<"pvt_type">>, <<"limits">>}
+      ,{<<"pvt_account_db">>, kzs_util:format_account_db(Account)}
+      ,{<<"pvt_account_id">>, kzs_util:format_account_id(Account)}
+      ,{<<"pvt_type">>, type()}
       ,{<<"pvt_created">>, TStamp}
       ,{<<"pvt_modified">>, TStamp}
       ,{<<"pvt_vsn">>, 1}
       ]
      ).
+
+-spec type() -> kz_term:ne_binary().
+type() -> <<"limits">>.
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -460,6 +472,18 @@ allotments(Doc, Default) ->
 set_allotments(Doc, Allotments) ->
     kz_json:set_value(<<"allotments">>, Allotments, Doc).
 
+-spec pvt_allotments(doc()) -> kz_json:object().
+pvt_allotments(Doc) ->
+    pvt_allotments(Doc, kz_json:new()).
+
+-spec pvt_allotments(doc(), Default) -> kz_json:object() | Default.
+pvt_allotments(Doc, Default) ->
+    kz_json:get_json_value([<<"pvt_allotments">>], Doc, Default).
+
+-spec set_pvt_allotments(doc(), kz_json:object()) -> doc().
+set_pvt_allotments(Doc, Allotments) ->
+    kz_json:set_value(<<"pvt_allotments">>, Allotments, Doc).
+
 %%------------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -477,7 +501,7 @@ inbound_channels_per_did_rules(Doc, Default) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec get_limit(kz_term:ne_binary(), kz_json:object(), tristate_integer()) ->
-                       tristate_integer().
+          tristate_integer().
 get_limit(Key, Doc, Default) ->
     PrivateValue = get_private_limit(Key, Doc),
     PublicValue =  kz_json:get_integer_value(Key, Doc),
@@ -496,7 +520,7 @@ get_limit(Key, Doc, Default) ->
     end.
 
 -spec get_public_limit(kz_term:ne_binary(), kz_json:object(), tristate_integer()) ->
-                              non_neg_integer().
+          non_neg_integer().
 get_public_limit(Key, Doc, Default) ->
     case kz_json:get_integer_value(Key, Doc) of
         'undefined' -> get_default_limit(Key, Default);
@@ -624,8 +648,7 @@ get_default_limit_boolean(Key, Default) ->
 -spec get_limit_list(kz_term:ne_binary(), kz_json:object(), list()) -> list().
 get_limit_list(Key, JObj, Default) ->
     case kz_json:get_list_value(<<"pvt_", Key/binary>>, JObj) of
-        'undefined' ->
-            get_public_limit_list(Key, JObj, Default);
+        'undefined' -> get_public_limit_list(Key, JObj, Default);
         Value -> Value
     end.
 
@@ -677,15 +700,18 @@ get_bundled_limit(AccountDb, View) ->
         {'ok', JObjs} -> filter_bundled_limit(JObjs);
         {'error', _R} ->
             lager:debug("failed get bundled limit from ~s in ~s: ~p"
-                       ,[View, AccountDb, _R]),
+                       ,[View, AccountDb, _R]
+                       ),
             0
     end.
 
 -spec filter_bundled_limit(kz_json:objects()) -> non_neg_integer().
 filter_bundled_limit(JObjs) ->
-    length([JObj
-            || JObj <- JObjs
-                   ,kz_json:is_true([<<"value">>, <<"enabled">>]
-                                   ,JObj
-                                   ,'true')
-           ]).
+    lists:foldl(fun count_enabled/2, 0, JObjs).
+
+-spec count_enabled(kz_json:object(), non_neg_integer()) -> non_neg_integer().
+count_enabled(JObj, Sum) ->
+    case kz_json:is_true([<<"value">>, <<"enabled">>], JObj, 'true') of
+        'true' -> Sum + 1;
+        'false' -> Sum
+    end.

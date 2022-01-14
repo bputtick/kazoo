@@ -1,10 +1,15 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc Handle requests to read configuration data
 %%% Support nested keys a la kz_json, with a #
 %%% as a separator i.e key#subkey#subsubkey
 %%%
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(sysconf_get).
@@ -19,7 +24,7 @@ init() -> 'ok'.
 -spec handle_req(kz_json:object(), kz_term:proplist()) -> 'ok'.
 handle_req(ApiJObj, _Props) ->
     'true' = kapi_sysconf:get_req_v(ApiJObj),
-    kz_util:put_callid(ApiJObj),
+    kz_log:put_callid(ApiJObj),
 
     Category = kz_json:get_binary_value(<<"Category">>, ApiJObj),
     Key = kz_json:get_value(<<"Key">>, ApiJObj),

@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_services_invoice).
@@ -36,8 +40,7 @@
                  ,items = kz_services_items:empty() :: kz_services_items:items()
                  ,activation_charges = kz_services_activation_items:empty() :: kz_services_activation_items:items()
                  ,plan = kz_services_plan:empty() :: kz_services_plan:plan()
-                 }
-       ).
+                 }).
 
 -opaque invoice() :: #invoice{}.
 -type setter_fun() :: {fun((invoice(), Value) -> invoice()), Value}.

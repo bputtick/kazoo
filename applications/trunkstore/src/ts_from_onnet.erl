@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc Calls coming from known clients, getting settings for caller-id and
 %%% what not, and sending the calls offnet.
 %%%
@@ -8,6 +8,11 @@
 %%% ts_from_offnet.
 %%%
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ts_from_onnet).
@@ -46,7 +51,7 @@ maybe_onnet_data(State) ->
     ToDID = knm_converters:normalize(ToUser, AccountId),
     FromUser = kz_json:get_ne_binary_value(<<"Caller-ID-Name">>, RouteReq),
 
-    lager:info("on-net request from ~s(~s) to ~s", [FromUser, AccountId, ToDID]),
+    lager:info("onnet request from ~s(~s) to ~s", [FromUser, AccountId, ToDID]),
     Options =
         case ts_util:lookup_did(FromUser, AccountId) of
             {'ok', Opts} -> Opts;
@@ -162,7 +167,7 @@ onnet_data(CallID, AccountId, FromUser, ToDID, Options, State) ->
     catch
         ?STACKTRACE(_A, _B, ST)
         lager:info("exception ~p:~p", [_A, _B]),
-        kz_util:log_stacktrace(ST),
+        kz_log:log_stacktrace(ST),
         ts_callflow:send_hangup(State)
     after
         ts_callflow:cleanup_amqp(State)
@@ -258,19 +263,19 @@ fix_request_values(Username, Realm) ->
     ].
 
 -spec get_referred_by(kz_json:object()) ->
-                             'undefined' | {kz_term:ne_binary(), kz_term:ne_binary()}.
+          'undefined' | {kz_term:ne_binary(), kz_term:ne_binary()}.
 get_referred_by(JObj) ->
     ReferredBy = kz_json:get_value([<<"Custom-Channel-Vars">>, <<"Referred-By">>], JObj),
     extract_sip_username(ReferredBy).
 
 -spec get_redirected_by(kz_json:object()) ->
-                               'undefined' | {kz_term:ne_binary(), kz_term:ne_binary()}.
+          'undefined' | {kz_term:ne_binary(), kz_term:ne_binary()}.
 get_redirected_by(JObj) ->
     RedirectedBy = kz_json:get_value([<<"Custom-Channel-Vars">>, <<"Redirected-By">>], JObj),
     extract_sip_username(RedirectedBy).
 
 -spec extract_sip_username(kz_term:api_ne_binary()) ->
-                                  'undefined' | {kz_term:ne_binary(), kz_term:ne_binary()}.
+          'undefined' | {kz_term:ne_binary(), kz_term:ne_binary()}.
 extract_sip_username('undefined') -> 'undefined';
 extract_sip_username(Contact) ->
     ReOptions = [{'capture', 'all_but_first', 'binary'}],

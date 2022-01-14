@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2013-2019, 2600Hz
+%%% @copyright (C) 2013-2020, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_channel_redirect).
@@ -47,7 +52,7 @@ redirect_via_endpoint(DestNodeURL, UUID) ->
     send_redirect('undefined', Contact, Channel).
 
 -spec send_redirect(kz_term:api_binary(), kz_term:ne_binary(), channel()) ->
-                           ecallmgr_util:send_cmd_ret().
+          ecallmgr_util:send_cmd_ret().
 send_redirect('undefined', Contact, #channel{node=Node
                                             ,uuid=UUID
                                             ,answered=IsAnswered

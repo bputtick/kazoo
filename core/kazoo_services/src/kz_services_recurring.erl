@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_services_recurring).
@@ -125,7 +129,7 @@ is_current_month_collected(?MATCH_MODB_SUFFIX_UNENCODED(_, Year, Month) = Accoun
 is_current_month_collected(?MATCH_MODB_SUFFIX_ENCODED(_, Year, Month) = AccountMODB) ->
     is_collected(AccountMODB, Year, Month);
 is_current_month_collected(Account) ->
-    ?MATCH_MODB_SUFFIX_ENCODED(_, Year, Month) = kz_util:format_account_mod_id(Account),
+    ?MATCH_MODB_SUFFIX_ENCODED(_, Year, Month) = kzs_util:format_account_mod_id(Account),
     is_collected(Account, Year, Month).
 
 %%------------------------------------------------------------------------------
@@ -140,7 +144,7 @@ is_last_month_collected(?MATCH_MODB_SUFFIX_UNENCODED(_, Year, Month) = AccountMO
 is_last_month_collected(?MATCH_MODB_SUFFIX_ENCODED(_, Year, Month) = AccountMODB) ->
     is_last_month_collected(AccountMODB, Year, Month);
 is_last_month_collected(Account) ->
-    MODB = ?MATCH_MODB_SUFFIX_ENCODED(_, _, _) = kz_util:format_account_mod_id(Account),
+    MODB = ?MATCH_MODB_SUFFIX_ENCODED(_, _, _) = kzs_util:format_account_mod_id(Account),
     is_last_month_collected(MODB).
 
 %%------------------------------------------------------------------------------
@@ -148,7 +152,7 @@ is_last_month_collected(Account) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec is_last_month_collected(kz_term:ne_binary(), kz_term:ne_binary() | kz_time:year(), kz_term:ne_binary() | kz_time:month()) ->
-                                     boolean().
+          boolean().
 is_last_month_collected(Account, Year, Month) ->
     Timestamp =
         calendar:datetime_to_gregorian_seconds({{kz_term:to_integer(Year), kz_term:to_integer(Month), 1}
@@ -162,9 +166,9 @@ is_last_month_collected(Account, Year, Month) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec is_collected(kz_term:ne_binary(), kz_term:ne_binary() | kz_time:year(), kz_term:ne_binary() | kz_time:month()) ->
-                          boolean().
+          boolean().
 is_collected(Account, Year, Month) ->
-    AccountId = kz_util:format_account_id(Account),
+    AccountId = kzs_util:format_account_id(Account),
     is_proccessed(AccountId
                  ,?COLLECT_RECURRING_MARKER_ID
                  ,kz_term:to_integer(Year)
@@ -223,12 +227,12 @@ collect_invoices_fold_fun(Services, DueTimestamp) ->
     end.
 
 -spec collect_bookkeeper(kz_services_invoice:invoice(), kz_services:services(), kz_time:gregorian_seconds()) ->
-                                kz_amqp_worker:request_return().
+          kz_amqp_worker:request_return().
 collect_bookkeeper(Invoice, Services, DueTimestamp) ->
     Request = [{<<"Account-ID">>, kz_services:account_id(Services)}
               ,{<<"Bookkeeper-ID">>, kz_services_invoice:bookkeeper_id(Invoice)}
               ,{<<"Bookkeeper-Type">>, kz_services_invoice:bookkeeper_type(Invoice)}
-              ,{<<"Call-ID">>, kz_util:get_callid()}
+              ,{<<"Call-ID">>, kz_log:get_callid()}
               ,{<<"Due-Timestamp">>, DueTimestamp}
               ,{<<"Vendor-ID">>, kz_services_invoice:bookkeeper_vendor_id(Invoice)}
                | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
@@ -257,7 +261,7 @@ handle_collect_bookkeeper_results([_Error | Results]) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec send_early_reminder(kz_term:ne_binary(), kz_time:gregorian_seconds(), kz_time:year(), kz_time:month(), boolean()) ->
-                                 {'ok', kz_term:ne_binary()}.
+          {'ok', kz_term:ne_binary()}.
 send_early_reminder(AccountId, DueTimestamp, Year, Month, 'false') ->
     lager:debug("attempting to send bill reminder ~s", [AccountId]),
     _ = send_reminder(AccountId, DueTimestamp),
@@ -309,7 +313,7 @@ do_notify_reseller(AccountId, Services, Invoice, DueTimestamp) ->
     kapps_notify_publisher:cast(props:filter_undefined(Props), fun kapi_notifications:publish_bill_reminder/1).
 
 -spec maybe_add_payment_token(kz_services:services(), kz_services_invoice:invoice()) ->
-                                     kz_term:proplist().
+          kz_term:proplist().
 maybe_add_payment_token(Services, Invoice) ->
     case kz_services_invoice:bookkeeper_type(Invoice) of
         'undefined' -> [];
@@ -355,7 +359,7 @@ is_account_enabled(AccountId) ->
 %%------------------------------------------------------------------------------
 -spec is_proccessed(kz_term:ne_binary(), kz_term:ne_binary(), kz_time:year(), kz_time:month()) -> boolean().
 is_proccessed(AccountId, MarkerId, Year, Month) ->
-    AccountMODB = kz_util:format_account_mod_id(AccountId, Year, Month),
+    AccountMODB = kzs_util:format_account_mod_id(AccountId, Year, Month),
     case kazoo_modb:open_doc(AccountMODB, MarkerId) of
         {'ok', JObj} ->
             lager:debug("recurring charges for account ~s for ~b-~b is processed on ~s"
@@ -371,10 +375,10 @@ is_proccessed(AccountId, MarkerId, Year, Month) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec set_marker(kz_term:ne_binary(), kz_term:ne_binary(), kz_time:year(), kz_time:month()) ->
-                        {'ok', kz_json:object()} |
-                        {'error', kazoo_data:data_errors()}.
+          {'ok', kz_json:object()} |
+          {'error', kazoo_data:data_errors()}.
 set_marker(AccountId, MarkerId, Year, Month) ->
-    AccountMODB = kz_util:format_account_mod_id(AccountId, Year, Month),
+    AccountMODB = kzs_util:format_account_mod_id(AccountId, Year, Month),
     PvtOptions = [{'account_id', AccountId}
                  ,{'crossbar_doc_vsn', 1}
                  ,{'id', MarkerId}

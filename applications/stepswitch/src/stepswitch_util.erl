@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(stepswitch_util).
@@ -16,6 +20,7 @@
 -export([route_by/0]).
 -export([resources_to_endpoints/3]).
 -export([json_to_template_props/1]).
+-export([convert_to_e164_format/2]).
 
 -include("stepswitch.hrl").
 -include_lib("kazoo_stdlib/include/kazoo_json.hrl").
@@ -51,6 +56,18 @@ get_realm(JObj) ->
 get_inbound_destination(JObj) ->
     {Number, _} = kapps_util:get_destination(JObj, ?APP_NAME, <<"inbound_user_field">>),
     convert_to_e164_format(Number, ?SS_CONFIG_CAT, <<"assume_inbound_e164">>).
+
+%%------------------------------------------------------------------------------
+%% @doc Convert Number to e164 format if the number is reconcilable else return
+%% the value Default
+%% @end
+%%------------------------------------------------------------------------------
+-spec convert_to_e164_format(kz_term:ne_binary(), Default) -> kz_term:ne_binary() | Default.
+convert_to_e164_format(Number, Default) ->
+    case knm_converters:is_reconcilable(Number) of
+        'true' -> knm_converters:normalize(Number);
+        'false' -> Default
+    end.
 
 %%------------------------------------------------------------------------------
 %% @doc Convert number to e164 format depending on config values set in system_config db
@@ -190,16 +207,16 @@ maybe_remove_diversions(JObj) ->
 
 
 -spec get_diversions(kz_json:object()) ->
-                            'undefined' |
-                            kz_term:ne_binaries().
+          'undefined' |
+          kz_term:ne_binaries().
 get_diversions(JObj) ->
     Inception = kz_json:get_value(<<"Inception">>, JObj),
     Diversions = kz_json:get_value(<<"Diversions">>, JObj, []),
     get_diversions(Inception, Diversions).
 
 -spec get_diversions(kz_term:api_binary(), kz_term:ne_binaries()) ->
-                            'undefined' |
-                            kz_term:ne_binaries().
+          'undefined' |
+          kz_term:ne_binaries().
 get_diversions('undefined', _Diversion) -> 'undefined';
 get_diversions(_Inception, []) -> 'undefined';
 get_diversions(Inception, Diversions) ->
@@ -236,7 +253,7 @@ build_filter_fun(Name, Number) ->
     end.
 
 -spec format_endpoints(kz_json:objects(), kz_term:api_binary(), kz_term:api_binary(), kapi_offnet_resource:req(), filter_fun()) ->
-                              kz_json:objects().
+          kz_json:objects().
 format_endpoints(Endpoints, Name, Number, OffnetReq, FilterFun) ->
     SIPHeaders = get_sip_headers(OffnetReq),
     AccountId = kapi_offnet_resource:hunt_account_id(OffnetReq
@@ -266,7 +283,7 @@ set_endpoint_caller_id(Endpoint, Name, Number) ->
                          ).
 
 -spec format_endpoint(kz_json:object(), kz_term:api_binary(), filter_fun(), kapi_offnet_resource:req(), kz_json:object(), kz_term:ne_binary()) ->
-                             kz_json:object().
+          kz_json:object().
 format_endpoint(Endpoint, Number, FilterFun, OffnetReq, SIPHeaders, AccountId) ->
     FormattedEndpoint = apply_formatters(Endpoint, SIPHeaders, AccountId),
     FilteredEndpoint = kz_json:filter(FilterFun, FormattedEndpoint),
@@ -306,7 +323,7 @@ maybe_add_sip_headers(Endpoint, SIPHeaders) ->
     end.
 
 -spec maybe_endpoint_format_from(kz_json:object(), kz_term:ne_binary(), kapi_offnet_resource:req()) ->
-                                        kz_json:object().
+          kz_json:object().
 maybe_endpoint_format_from(Endpoint, Number, OffnetReq) ->
     CCVs = kz_json:get_value(<<"Custom-Channel-Vars">>, Endpoint, kz_json:new()),
     case kz_json:is_true(<<"Format-From-URI">>, CCVs) of
@@ -324,7 +341,7 @@ maybe_endpoint_format_from(Endpoint, Number, OffnetReq) ->
     end.
 
 -spec endpoint_format_from(kz_json:object(), kz_term:ne_binary(), kapi_offnet_resource:req(), kz_json:object()) ->
-                                  kz_json:object().
+          kz_json:object().
 endpoint_format_from(Endpoint, Number, OffnetReq, CCVs) ->
     FromNumber = kz_json:get_ne_value(?KEY_OUTBOUND_CALLER_ID_NUMBER, Endpoint, Number),
     case get_endpoint_format_from(OffnetReq, CCVs) of
@@ -372,12 +389,12 @@ route_by() ->
     end.
 
 -spec resources_to_endpoints(stepswitch_resources:resources(), kz_term:ne_binary(), kapi_offnet_resource:req()) ->
-                                    kz_json:objects().
+          kz_json:objects().
 resources_to_endpoints(Resources, Number, OffnetJObj) ->
     resources_to_endpoints(Resources, Number, OffnetJObj, []).
 
 -spec resources_to_endpoints(stepswitch_resources:resources(), kz_term:ne_binary(), kapi_offnet_resource:req(), kz_json:objects()) ->
-                                    kz_json:objects().
+          kz_json:objects().
 resources_to_endpoints([], _Number, _OffnetJObj, Endpoints) ->
     lists:reverse(Endpoints);
 resources_to_endpoints([Resource|Resources], Number, OffnetJObj, Endpoints) ->
@@ -385,7 +402,7 @@ resources_to_endpoints([Resource|Resources], Number, OffnetJObj, Endpoints) ->
     resources_to_endpoints(Resources, Number, OffnetJObj, MoreEndpoints).
 
 -spec maybe_resource_to_endpoints(stepswitch_resources:resource(), kz_term:ne_binary(), kapi_offnet_resource:req(), kz_json:objects()) ->
-                                         kz_json:objects().
+          kz_json:objects().
 maybe_resource_to_endpoints(Resource
                            ,Number
                            ,OffnetJObj
@@ -401,7 +418,7 @@ maybe_resource_to_endpoints(Resource
     %% DestinationNumber = maybe_update_number(Resource, Number),
     DestinationNumber = Number,
     lager:debug("building resource ~s endpoints", [Id]),
-    CCVUpdates = [{<<"Global-Resource">>, kz_term:to_binary(Global)}
+    CCVUpdates = [{<<"Global-Resource">>, Global}
                  ,{<<"Resource-ID">>, Id}
                  ,{<<"E164-Destination">>, DestinationNumber}
                  ,{<<"Original-Number">>, kapi_offnet_resource:to_did(OffnetJObj)}
@@ -442,7 +459,7 @@ normalize_proplist(Props) ->
     [normalize_proplist_element(Elem) || Elem <- Props].
 
 -spec normalize_proplist_element({kz_term:proplist_key(), kz_term:proplist_value()}) ->
-                                        {kz_term:proplist_key(), kz_term:proplist_value()}.
+          {kz_term:proplist_key(), kz_term:proplist_value()}.
 normalize_proplist_element({K, V}) when is_list(V) ->
     {normalize_value(K), normalize_proplist(V)};
 normalize_proplist_element({K, V}) when is_binary(V) ->

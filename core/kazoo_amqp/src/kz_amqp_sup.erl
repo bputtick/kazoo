@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_amqp_sup).
@@ -31,6 +35,7 @@
 
 -define(CHILDREN, [?WORKER('kz_amqp_connections')
                   ,?SUPER('kz_amqp_connection_sup')
+                  ,?SUPER('kz_amqp_federated_listeners_sup')
                   ,?WORKER('kz_amqp_assignments')
                   ,?WORKER('kz_amqp_bootstrap')
                   ]).

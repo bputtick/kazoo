@@ -1,7 +1,11 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2017-2019, 2600Hz
+%%% @copyright (C) 2017-2020, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_hooks_util).
@@ -235,7 +239,7 @@ handle_call_event(JObj, Props) ->
     HookEvent = kz_api:event_name(JObj),
     AccountId = kz_call_event:account_id(JObj),
     CallId = kz_call_event:call_id(JObj),
-    kz_util:put_callid(CallId),
+    kz_log:put_callid(CallId),
 
     RoutingKey = binding_key(AccountId, HookEvent),
     _ = kazoo_bindings:map(RoutingKey, [JObj]),
@@ -243,7 +247,7 @@ handle_call_event(JObj, Props) ->
     handle_call_event(JObj, AccountId, HookEvent, CallId, props:get_is_true('rr', Props)).
 
 -spec handle_call_event(kz_json:object(), kz_term:api_binary(), kz_term:ne_binary(), kz_term:ne_binary(), boolean()) ->
-                               'ok'.
+          'ok'.
 handle_call_event(JObj, 'undefined', <<"CHANNEL_CREATE">>, CallId, RR) ->
     lager:debug("event 'channel_create' had no account id"),
     case lookup_account_id(JObj) of
@@ -255,6 +259,18 @@ handle_call_event(JObj, 'undefined', <<"CHANNEL_CREATE">>, CallId, RR) ->
                                   ,<<"Account-ID">>
                                   ], AccountId, JObj),
             handle_call_event(J, AccountId, <<"CHANNEL_CREATE">>, CallId, RR)
+    end;
+handle_call_event(JObj, 'undefined', <<"CHANNEL_DESTROY">>, CallId, RR) ->
+    lager:debug("event 'channel_destroy' had no account id"),
+    case lookup_account_id(JObj) of
+        {'error', _R} ->
+            lager:debug("failed to determine account id for 'channel_destroy'", []);
+        {'ok', AccountId} ->
+            lager:debug("determined account id for 'channel_destroy' is ~s", [AccountId]),
+            J = kz_json:set_value([<<"Custom-Channel-Vars">>
+                                  ,<<"Account-ID">>
+                                  ], AccountId, JObj),
+            handle_call_event(J, AccountId, <<"CHANNEL_DESTROY">>, CallId, RR)
     end;
 handle_call_event(JObj, AccountId, HookEvent, _CallId, 'false') ->
     Evt = ?HOOK_EVT(AccountId, HookEvent, JObj),
@@ -281,7 +297,7 @@ lookup_account_id(JObj) ->
 
 -spec fetch_account_id(kz_term:ne_binary()) -> {'ok', kz_term:ne_binary()} | {'error', any()}.
 fetch_account_id(Number) ->
-    case knm_number:lookup_account(Number) of
+    case knm_numbers:lookup_account(Number) of
         {'ok', AccountId, _} ->
             CacheProps = [{'origin', {'db', knm_converters:to_db(Number), Number}}],
             kz_cache:store_local(?HOOKS_CACHE_NAME, cache_key_number(Number), AccountId, CacheProps),

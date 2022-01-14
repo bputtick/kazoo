@@ -1,10 +1,15 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc Renders a custom account email template, or the system default,
 %%% and sends the email with fax attachment to the user.
 %%%
 %%%
 %%% @author James Aimonetti <james@2600hz.org>
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(notify_fax_outbound_to_email).
@@ -30,7 +35,7 @@ init() ->
 -spec handle_req(kz_json:object(), kz_term:proplist()) -> any().
 handle_req(JObj, _Props) ->
     true = kapi_notifications:fax_outbound_v(JObj),
-    _ = kz_util:put_callid(JObj),
+    _ = kz_log:put_callid(JObj),
 
     lager:debug("new outbound fax left, sending to email if enabled"),
 
@@ -84,7 +89,7 @@ process_req(FaxDoc, JObj, _Props) ->
         ?STACKTRACE(C, R, ST)
         Msg = io_lib:format("failed: ~s:~p", [C, R]),
         lager:debug(Msg),
-        kz_util:log_stacktrace(ST),
+        kz_log:log_stacktrace(ST),
         {'error', Msg}
         end.
 
@@ -105,7 +110,7 @@ create_template_props(Event, [FaxDoc | _Others]=_Docs, Account) ->
     DateCalled = kz_json:get_integer_value(<<"Fax-Timestamp">>, Event, Now),
     DateTime = calendar:gregorian_seconds_to_datetime(DateCalled),
     Timezone = kz_term:to_list(kz_json:get_value([<<"tx_result">>,<<"timezone">>], FaxDoc, <<"UTC">>)),
-    ClockTimezone = kapps_config:get_string(<<"servers">>, <<"clock_timezone">>, <<"UTC">>),
+    ClockTimezone = kapps_config:get_string(<<"servers">>, <<"clock_timezone">>, "UTC"),
     [{<<"account">>, notify_util:json_to_template_props(Account)}
     ,{<<"service">>, notify_util:get_service_props(Event, Account, ?MOD_CONFIG_CAT)}
     ,{<<"fax">>, [{<<"caller_id_number">>, knm_util:pretty_print(CIDNum)}

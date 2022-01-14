@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(media_recording_sup).
@@ -33,13 +38,13 @@ start_link() ->
     {'ok', Pid} = supervisor:start_link({'local', ?SERVER}, ?MODULE, []),
     lager:debug("started media recording supervisor"),
     Workers = kapps_config:get_integer(?CONFIG_CAT, [<<"call_recording">>, <<"workers">>], 1),
-    kz_util:spawn(fun() -> [begin
-                                timer:sleep(500),
-                                supervisor:start_child(Pid, [])
-                            end
-                            || _N <- lists:seq(1, Workers)
-                           ]
-                  end),
+    kz_process:spawn(fun() -> [begin
+                                   timer:sleep(500),
+                                   supervisor:start_child(Pid, [])
+                               end
+                               || _N <- lists:seq(1, Workers)
+                              ]
+                     end),
     {'ok', Pid}.
 
 %%==============================================================================

@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2016-2019, 2600Hz
+%%% @copyright (C) 2016-2020, 2600Hz
 %%% @doc
 %%% @author Pierre Fenoll
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(tasks_sup).
@@ -20,8 +25,8 @@
                    %% Jobs not generating CSV output
                   ,?WORKER('kz_tasks_trigger')
                    %% Numbers
-                  ,?WORKER('knm_port_request_crawler')
-                  ,?WORKER('knm_number_crawler')
+                  ,?WORKER('kt_port_request_crawler')
+                  ,?WORKER('kt_number_crawler')
                    %% DB
                   ,?WORKER('kz_account_crawler')
                    %% Standalone tasks

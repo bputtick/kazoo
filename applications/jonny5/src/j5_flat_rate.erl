@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(j5_flat_rate).
@@ -95,12 +99,12 @@ is_number_eligible_for_flat_rate(Request) ->
        ).
 
 -spec maybe_get_resource_flat_rate(j5_request:request()) ->
-                                          {kz_term:ne_binary(), kz_term:ne_binary()}.
+          {kz_term:ne_binary(), kz_term:ne_binary()}.
 maybe_get_resource_flat_rate(Request) ->
     maybe_get_resource_flat_rate(Request, ?SHOULD_LOOKUP_FLAT_RATE).
 
 -spec maybe_get_resource_flat_rate(j5_request:request(), boolean()) ->
-                                          {kz_term:ne_binary(), kz_term:ne_binary()}.
+          {kz_term:ne_binary(), kz_term:ne_binary()}.
 maybe_get_resource_flat_rate(_Request, 'false') ->
     {?WHITELIST, ?BLACKLIST};
 maybe_get_resource_flat_rate(Request, 'true') ->

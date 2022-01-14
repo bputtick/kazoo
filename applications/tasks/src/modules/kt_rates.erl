@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2013-2019, 2600Hz
+%%% @copyright (C) 2013-2020, 2600Hz
 %%% @doc
 %%% @author Sergey Korobkov
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kt_rates).
@@ -337,8 +342,10 @@ validate_field(RateJObj, <<"weight">>) ->
     Value = maybe_generate_weight(RateJObj),
     kzd_rates:set_weight(RateJObj, Value);
 validate_field(RateJObj, <<"caller_id_numbers">>) ->
-    Value = maybe_generate_caller_id_numbers(RateJObj),
-    kzd_rates:set_caller_id_numbers(RateJObj, Value);
+    case maybe_generate_caller_id_numbers(RateJObj) of
+        'undefined' -> RateJObj;
+        Value -> kzd_rates:set_caller_id_numbers(RateJObj, kz_binary:join(Value, <<":">>))
+    end;
 validate_field(RateJObj, <<"routes">>) ->
     Value = maybe_generate_routes(RateJObj),
     kzd_rates:set_routes(RateJObj, Value);
@@ -467,7 +474,7 @@ maybe_generate_weight(RateJObj, 'undefined') ->
 maybe_generate_weight(_RateJObj, Weight) -> kzd_rates:constrain_weight(Weight).
 
 -spec generate_weight(kz_term:ne_binary() | pos_integer(), kz_currency:units(), kz_currency:units()) ->
-                             kzd_rates:weight_range().
+          kzd_rates:weight_range().
 generate_weight(Prefix, UnitCost, UnitIntCost) when is_integer(Prefix) ->
     generate_weight(kz_term:to_binary(Prefix), UnitCost, UnitIntCost);
 generate_weight(?NE_BINARY = Prefix, UnitCost, UnitIntCost) ->
@@ -477,16 +484,16 @@ generate_weight(?NE_BINARY = Prefix, UnitCost, UnitIntCost) ->
     Weight = (byte_size(Prefix) * 10) - trunc(CostToUse * 100),
     kzd_rates:constrain_weight(Weight).
 
--spec maybe_generate_caller_id_numbers(kzd_rates:doc()) -> kz_term:ne_binaries()|'undefined'.
+-spec maybe_generate_caller_id_numbers(kzd_rates:doc()) -> kz_term:api_ne_binaries().
 maybe_generate_caller_id_numbers(RateJObj) ->
-    maybe_generate_caller_id_numbers(RateJObj, kz_json:get_value(<<"caller_id_numbers">>, RateJObj)).
+    maybe_generate_caller_id_numbers(RateJObj, kz_json:get_ne_binary_value(<<"caller_id_numbers">>, RateJObj)).
 
 -spec maybe_generate_caller_id_numbers(kzd_rates:doc(), kz_term:ne_binary()) -> kz_term:api_ne_binaries().
-maybe_generate_caller_id_numbers(_RateJObj, CID_Numbers)  when is_binary(CID_Numbers) ->
+maybe_generate_caller_id_numbers(_RateJObj, CIDNumbers)  when is_binary(CIDNumbers) ->
     lists:map(fun(X) -> <<"^\\+?", X/binary, ".+", ?DOLLAR_SIGN>> end
-             ,binary:split(CID_Numbers, <<":">>, ['global'])
+             ,binary:split(CIDNumbers, <<":">>, ['global'])
              );
-maybe_generate_caller_id_numbers(_RateJObj, _CID_Numbers) ->
+maybe_generate_caller_id_numbers(_RateJObj, _CIDNumbers) ->
     'undefined'.
 
 -spec maybe_generate_routes(kzd_rates:doc()) -> kz_term:api_ne_binaries().

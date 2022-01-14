@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc Helpers for mod_flite
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_fs_flite).
@@ -17,7 +22,7 @@
 %% @end
 %%------------------------------------------------------------------------------
 -spec call_command(atom(), kz_term:ne_binary(), kz_json:object()) ->
-                          {kz_term:ne_binary(), kz_term:ne_binary()}.
+          {kz_term:ne_binary(), kz_term:ne_binary()}.
 call_command(Node, UUID, JObj) ->
     _ = ecallmgr_fs_command:set(Node, UUID
                                ,[{<<"tts_engine">>, <<"flite">>}

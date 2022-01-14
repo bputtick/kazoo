@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(pqc_cb_port_requests).
@@ -14,7 +18,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 -include("kazoo_proper.hrl").
--include_lib("kazoo_number_manager/include/knm_port_request.hrl").
+-include_lib("kazoo_numbers/include/knm_port_request.hrl").
 
 -define(ACCOUNTS_SETTINGS
        ,#{<<"pqc_ports_normal">> => #{<<"numbers">> => [<<"+13335551234">>]
@@ -93,7 +97,7 @@ init_system() ->
 -spec initial_state() -> state().
 initial_state() ->
     TestId = kz_binary:rand_hex(16),
-    kz_util:put_callid(TestId),
+    kz_log:put_callid(TestId),
 
     API = pqc_cb_api:authenticate(),
     State = #{master => #{model => pqc_kazoo_model:new(API)
@@ -110,7 +114,7 @@ initial_state() ->
     catch
         ?STACKTRACE(_R, _T, ST)
         ?debugFmt("exception ~p:~p", [_R, _T]),
-        kz_util:log_stacktrace(ST),
+        kz_log:log_stacktrace(ST),
         cleanup(State),
         throw('failed')
         end.
@@ -182,7 +186,7 @@ create_admin_user(API, AccountId, AccountName) ->
                            ).
 
 -spec create_whitelabel(pqc_cb_api:state(), kz_term:ne_binary(), kz_term:ne_binary(), boolean()) ->
-                               pqc_cb_api:response().
+          pqc_cb_api:response().
 create_whitelabel(_, _, _, 'false') ->
     <<"no whitelable for you">>;
 create_whitelabel(API, AccountId, AccountName, 'true') ->

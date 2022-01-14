@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_ip).
@@ -48,7 +52,7 @@ from_json(JObj) -> JObj.
 %% @end
 %%------------------------------------------------------------------------------
 -spec create(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary()) ->
-                    std_return().
+          std_return().
 create(IP, Zone, Host) ->
     Timestamp = kz_time:now_s(),
     JObj = kz_json:from_list(
@@ -109,7 +113,7 @@ assign(Account, IPDoc) ->
         'false' -> {'error', 'already_assigned'};
         'true' ->
             IPJObj = to_json(IPDoc),
-            AccountId = kz_util:format_account_id(Account, 'raw'),
+            AccountId = kzs_util:format_account_id(Account),
             Props = [{<<"pvt_assigned_to">>, AccountId}
                     ,{<<"pvt_modified">>, kz_time:now_s()}
                     ,{<<"pvt_status">>, ?ASSIGNED}
@@ -120,7 +124,7 @@ assign(Account, IPDoc) ->
 
 -spec maybe_save_in_account(kz_term:ne_binary(), std_return()) -> std_return().
 maybe_save_in_account(AccountId, {'ok', JObj}=Ok) ->
-    AccountDb = kz_util:format_account_db(AccountId),
+    AccountDb = kzs_util:format_account_db(AccountId),
     case kz_datamgr:open_doc(AccountDb, kz_doc:id(JObj)) of
         {'error', 'not_found'} ->
             _ = kz_datamgr:save_doc(AccountDb, kz_doc:delete_revision(JObj)),
@@ -163,7 +167,7 @@ release(IP) ->
 
 -spec maybe_remove_from_account(kz_term:ne_binary(), std_return()) -> std_return().
 maybe_remove_from_account(AccountId, {'ok', IP}=Ok) ->
-    AccountDb = kz_util:format_account_db(AccountId),
+    AccountDb = kzs_util:format_account_db(AccountId),
     _ = case kz_datamgr:open_doc(AccountDb, ip(IP)) of
             {'ok', JObj} -> kz_datamgr:del_doc(AccountDb, JObj);
             {'error', _} -> 'ok'

@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc Handles endpoint inbound recording
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kapps_call_recording).
@@ -33,11 +37,13 @@
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec get_timelimit(kz_term:api_integer()) -> pos_integer().
+-spec get_timelimit(kz_json:object() | kz_term:api_integer()) -> pos_integer().
 get_timelimit('undefined') ->
     kz_media_util:max_recording_time_limit();
 get_timelimit(TL) when is_integer(TL) ->
-    get_timelimit(TL, kz_media_util:max_recording_time_limit()).
+    get_timelimit(TL, kz_media_util:max_recording_time_limit());
+get_timelimit(JObj) ->
+    get_timelimit(kz_json:get_integer_value(<<"time_limit">>, JObj)).
 
 -spec get_timelimit(non_neg_integer(), integer()) -> pos_integer().
 get_timelimit(TL, Max) when Max > TL -> TL;
@@ -83,7 +89,7 @@ should_store_recording(AccountId, Url) ->
 
 -spec maybe_storage_plan(kz_term:ne_binary()) -> store_url().
 maybe_storage_plan(AccountId) ->
-    AccountDb = kz_util:format_account_mod_id(AccountId),
+    AccountDb = kzs_util:format_account_mod_id(AccountId),
     Plan = kzs_plan:get_dataplan(AccountDb, <<"call_recording">>),
     case maps:get('tag', Plan, <<"local">>) =/= <<"local">>
         orelse maps:is_key('att_handler', Plan) of

@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(mod_kazoo).
@@ -48,6 +52,8 @@
 
 -export([sync_channel/2]).
 -export([no_legacy/1]).
+
+-export([async_api/3]).
 
 -include("ecallmgr.hrl").
 
@@ -117,20 +123,7 @@ bind(Node, Type, Timeout) ->
             {'error', 'exception'}
     end.
 
--spec fetch_reply(map()) -> 'ok' | {'ok', any()} | {'error', any()}.
-fetch_reply(#{node := Node, section := Section, fetch_id := FetchID, reply := Reply, timeout := Timeout})
-  when Timeout >= 0 ->
-    try gen_server:call({'mod_kazoo', Node}, {'fetch_reply', Section, FetchID, Reply}, Timeout) of
-        'timeout' -> {'error', 'timeout'};
-        {'ok', <<"-ERR ", Reason/binary>>} -> internal_fs_error(Reason);
-        {'ok', <<"+OK ", Result/binary>>} when Result =/= <<>> -> {'ok', Result};
-        {'ok', <<"+OK", _/binary>>} -> 'ok';
-        Result -> Result
-    catch
-        _E:_R:_ ->
-            lager:info("failed to send fetch reply to ~s: ~p ~p", [Node, _E, _R]),
-            {'error', 'exception'}
-    end;
+-spec fetch_reply(map()) -> 'ok'.
 fetch_reply(#{node := Node, section := Section, fetch_id := FetchID, reply := Reply}) ->
     gen_server:cast({'mod_kazoo', Node}, {'fetch_reply', Section, FetchID, Reply}).
 
@@ -181,24 +174,24 @@ api(Node, Cmd, Args, Timeout) when is_atom(Node) ->
 
 
 -spec json_api(atom(), kz_term:ne_binary() | {kz_term:ne_binary(), kz_term:api_object()}) ->
-                      freeswitch:fs_json_api_return().
+          freeswitch:fs_json_api_return().
 json_api(Node, {Cmd, Args}) ->
     json_api(Node, 'undefined', Cmd, Args, ?TIMEOUT);
 json_api(Node, Cmd) ->
     json_api(Node, 'undefined', Cmd, 'undefined', ?TIMEOUT).
 
 -spec json_api(atom(), kz_term:api_ne_binary(), kz_term:text()) ->
-                      freeswitch:fs_json_api_return().
+          freeswitch:fs_json_api_return().
 json_api(Node, UUID, Cmd) ->
     json_api(Node, UUID, Cmd, 'undefined', ?TIMEOUT).
 
 -spec json_api(atom(), kz_term:api_ne_binary(), kz_term:ne_binary(), kz_term:api_object()) ->
-                      freeswitch:fs_json_api_return().
+          freeswitch:fs_json_api_return().
 json_api(Node, UUID, Cmd, Args) ->
     json_api(Node, UUID, Cmd, Args, ?TIMEOUT).
 
 -spec json_api(atom(), kz_term:api_ne_binary(), kz_term:ne_binary(), kz_term:api_object() | binary(), timeout()) ->
-                      freeswitch:fs_json_api_return().
+          freeswitch:fs_json_api_return().
 json_api(Node, UUID, Cmd, 'undefined', Timeout) ->
     json_api(Node, UUID, Cmd, <<>>, Timeout);
 json_api(Node, UUID, Cmd, Data, Timeout) when is_atom(Node) ->
@@ -239,7 +232,7 @@ json_api_result('ok', Bin) ->
 -spec bgapi(atom(), atom(), string() | binary()) -> freeswitch:fs_api_return().
 bgapi(Node, Cmd, Args) ->
     Self = self(),
-    _ = kz_util:spawn(
+    _ = kz_process:spawn(
           fun() ->
                   try gen_server:call({'mod_kazoo', Node}, {'bgapi', Cmd, Args}, ?TIMEOUT) of
                       {'ok', <<"-ERR ", Reason/binary>>} ->
@@ -272,7 +265,7 @@ bgapi(Node, Cmd, Args) ->
 -spec bgapi(atom(), atom(), string() | binary(), fun()) -> freeswitch:fs_api_return().
 bgapi(Node, Cmd, Args, Fun) when is_function(Fun, 2) ->
     Self = self(),
-    _ = kz_util:spawn(
+    _ = kz_process:spawn(
           fun() ->
                   try gen_server:call({'mod_kazoo', Node}, {'bgapi', Cmd, Args}, ?TIMEOUT) of
                       {'ok', <<"-ERR ", Reason/binary>>} ->
@@ -305,7 +298,7 @@ bgapi(Node, Cmd, Args, Fun) when is_function(Fun, 2) ->
 -spec bgapi(atom(), atom(), string() | binary(), fun(), list()) -> freeswitch:fs_api_return().
 bgapi(Node, Cmd, Args, Fun, CallBackParams) when is_function(Fun, 3) ->
     Self = self(),
-    _ = kz_util:spawn(
+    _ = kz_process:spawn(
           fun() ->
                   try gen_server:call({'mod_kazoo', Node}, {'bgapi', Cmd, Args}, ?TIMEOUT) of
                       {'ok', <<"-ERR ", Reason/binary>>} ->
@@ -338,7 +331,7 @@ bgapi(Node, Cmd, Args, Fun, CallBackParams) when is_function(Fun, 3) ->
 -spec bgapi(atom(), kz_term:ne_binary(), list(), atom(), string() | binary(), fun()) -> freeswitch:fs_api_return().
 bgapi(Node, UUID, CallBackParams, Cmd, Args, Fun) when is_function(Fun, 6) ->
     Self = self(),
-    _ = kz_util:spawn(
+    _ = kz_process:spawn(
           fun() ->
                   try gen_server:call({'mod_kazoo', Node}, {'bgapi', Cmd, Args}, ?TIMEOUT) of
                       {'ok', <<"-ERR ", Reason/binary>>} ->
@@ -425,11 +418,11 @@ config(Node, Section) ->
     gen_server:cast({'mod_kazoo', Node}, {'config', [Section]}).
 
 -spec bgapi4(atom(), atom(), string() | binary(), fun(), list()) ->
-                    {'ok', binary()} |
-                    {'error', 'timeout' | 'exception' | binary()}.
+          {'ok', binary()} |
+          {'error', 'timeout' | 'exception' | binary()}.
 bgapi4(Node, Cmd, Args, Fun, CallBackParams) ->
     Self = self(),
-    _ = kz_util:spawn(fun bgapi4/6, [Node, Cmd, Args, Fun, CallBackParams, Self]),
+    _ = kz_process:spawn(fun bgapi4/6, [Node, Cmd, Args, Fun, CallBackParams, Self]),
     receive
         {'api', Result} -> Result
     end.
@@ -509,4 +502,21 @@ no_legacy(Node) ->
             lager:info("failed to set mod_kazoo no_legacy on ~s: ~p ~p"
                       ,[Node, _E, _R]),
             {'error', 'exception'}
+    end.
+
+%%------------------------------------------------------------------------------
+%% @doc Make a background API call to FreeSWITCH and wait for reply.
+%% @end
+%%------------------------------------------------------------------------------
+-spec async_api(atom(), atom(), string() | binary()) -> freeswitch:fs_api_return().
+async_api(Node, Cmd, Args) ->
+    case bgapi(Node, Cmd, Args) of
+        {'error', _} = Error -> Error;
+        {'ok', JobId} ->
+            receive
+                {'bgok', JobId, <<"-ERR", Reason/binary>>} -> api_result('error', Reason);
+                {'bgok', JobId, <<"+OK", Result/binary>>} -> api_result('ok', Result);
+                {'bgok', JobId, Result} -> api_result('ok', Result);
+                {'bgerror', JobId, Error} -> api_result('error', Error)
+            end
     end.

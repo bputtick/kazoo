@@ -28,6 +28,8 @@
                                ,<<"sip_uri">>
                                ,<<"smartphone">>
                                ,<<"softphone">>
+                               ,<<"ctu">>
+                               ,<<"application">>
                                ]
                               }
                              ,{<<"limits">>
@@ -67,12 +69,15 @@
                                ,<<"knm_telnyx">>
                                ,<<"knm_vitelity">>
                                ,<<"knm_voip_innovations">>
+                               ,<<"knm_voxbone">>
                                ]
                               }
                              ,{<<"number_services">>
                               ,[<<"cnam">>
                                ,<<"e911">>
                                ,<<"port">>
+                               ,<<"sms">>
+                               ,<<"mms">>
                                ]
                               }
                              ,{<<"port_request">>
@@ -93,12 +98,16 @@
                                ]
                               }
                              ,{<<"qubicle">>
-                              ,[<<"queues">>
-                               ,<<"recipients">>
+                              ,[<<"basic_queue">>
+                               ,<<"pro_queue">>
+                               ,<<"basic_recipient">>
+                               ,<<"pro_recipient">>
                                ]
                               }
                              ,{<<"voicemails">>
-                              ,[<<"mailbox">>]
+                              ,[<<"mailbox">>
+                               ,<<"transcription">>
+                               ]
                               }
                              ,{<<"faxes">>
                               ,[<<"mailbox">>]

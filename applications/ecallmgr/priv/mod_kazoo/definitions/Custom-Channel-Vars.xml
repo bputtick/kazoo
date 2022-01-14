@@ -5,7 +5,9 @@
 			<field name="variable_sip_h_X-ecallmgr_" type="prefix"
 				exclude-prefix="true" />
 			<field name="variable_ecallmgr_" type="prefix" exclude-prefix="true" />
+			<field name="ecallmgr_" type="prefix" exclude-prefix="true" />
 
+			<field name="variable_Fetch-UUID" as="Fetch-ID" />
 			<field name="Fetch-UUID" as="Fetch-ID" />
 
 			<field name="Referred-To" type="expand"
@@ -15,9 +17,19 @@
 				</filters>
 			</field>
 			<field name="variable_sip_h_Referred-By" as="Referred-By" />
+
 			<field name="interaction-id" type="reference" />
 
-			<field name="variable_presence_id" as="Presence-ID" />
+            <field name="variable_presence_id" as="Presence-ID"/>
+            <!--
+			<field name="variable_presence_id" as="Presence-ID">
+			     <filters>
+			         <filter name="Caller-Resource-ID" type="exclude" compare="exists" />
+			     </filters>
+			</field>
+			 -->
+
+			<!-- <field name="Caller-Endpoint-Presence-ID" as="Presence-ID"/> -->
 
 			<field name="redirect" type="group">
 				<filters>

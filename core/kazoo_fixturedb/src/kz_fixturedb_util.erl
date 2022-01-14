@@ -1,13 +1,16 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_fixturedb_util).
 
 %% Driver callbacks
--export([format_error/1
-        ]).
+-export([format_error/1]).
 
 %% API
 -export([open_json/2, doc_path/2
@@ -32,6 +35,8 @@
         ,update_pvt_doc_hash/0, update_pvt_doc_hash/1
 
         ,start_me/0, start_me/1, stop_me/1
+
+        ,view_index_to_disk/3
         ]).
 
 -include("kz_fixturedb.hrl").
@@ -100,11 +105,11 @@ encode_query_filename(Design, Options) ->
 
 -spec docs_dir(db_map()) -> kz_term:text().
 docs_dir(#{server := #{url := Url}, name := DbName}) ->
-    kz_term:to_list(<<Url/binary, "/", DbName/binary, "/docs">>).
+    kz_term:to_list(filename:join([Url, DbName, "docs"])).
 
 -spec views_dir(db_map()) -> kz_term:text().
 views_dir(#{server := #{url := Url}, name := DbName}) ->
-    kz_term:to_list(<<Url/binary, "/", DbName/binary, "/views">>).
+    kz_term:to_list(filename:join([Url, DbName, "views"])).
 
 -spec update_doc(kz_json:object()) -> kz_json:object().
 update_doc(JObj) ->
@@ -169,38 +174,34 @@ stop_me(Pid) ->
 
 -spec get_doc_path(kz_term:ne_binary(), kz_term:ne_binary()) -> file:filename_all().
 get_doc_path(DbName, DocId) ->
-    Plan = kz_fixturedb_server:get_dummy_plan(),
-    get_doc_path(Plan, DbName, DocId).
+    get_doc_path(kz_fixturedb_maintenance:new_connection(), DbName, DocId).
 
--spec get_doc_path(map(), kz_term:ne_binary(), kz_term:ne_binary()) -> file:filename_all().
-get_doc_path(#{server := {_, Conn}}=_Plan, DbName, DocId) ->
+-spec get_doc_path(server_map(), kz_term:ne_binary(), kz_term:ne_binary()) -> file:filename_all().
+get_doc_path(Conn, DbName, DocId) ->
     doc_path(kz_fixturedb_server:get_db(Conn, DbName), DocId).
 
 -spec get_att_path(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary()) -> file:filename_all().
 get_att_path(DbName, DocId, AName) ->
-    Plan = kz_fixturedb_server:get_dummy_plan(),
-    get_att_path(Plan, DbName, DocId, AName).
+    get_att_path(kz_fixturedb_maintenance:new_connection(), DbName, DocId, AName).
 
--spec get_att_path(map(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary()) -> file:filename_all().
-get_att_path(#{server := {_, Conn}}=_Plan, DbName, DocId, AName) ->
+-spec get_att_path(server_map(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary()) -> file:filename_all().
+get_att_path(Conn, DbName, DocId, AName) ->
     att_path(kz_fixturedb_server:get_db(Conn, DbName), DocId, AName).
 
 -spec get_view_path(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:proplist()) -> file:filename_all().
 get_view_path(DbName, Design, Options) ->
-    Plan = kz_fixturedb_server:get_dummy_plan(),
-    get_view_path(Plan, DbName, Design, Options).
+    get_view_path(kz_fixturedb_maintenance:new_connection(), DbName, Design, Options).
 
--spec get_view_path(map(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:proplist()) -> file:filename_all().
-get_view_path(#{server := {_, Conn}}=_Plan, DbName, Design, Options) ->
+-spec get_view_path(server_map(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:proplist()) -> file:filename_all().
+get_view_path(Conn, DbName, Design, Options) ->
     view_path(kz_fixturedb_server:get_db(Conn, DbName), Design, Options).
 
 -spec add_att_to_index(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary()) -> 'ok' | {'error', any()}.
 add_att_to_index(DbName, DocId, AName) ->
-    Plan = kz_fixturedb_server:get_dummy_plan(),
-    add_att_to_index(Plan, DbName, DocId, AName).
+    add_att_to_index(kz_fixturedb_maintenance:new_connection(), DbName, DocId, AName).
 
--spec add_att_to_index(map(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary()) -> binary_or_error().
-add_att_to_index(#{server := {_, Conn}}=_Plan, DbName, DocId, AName) ->
+-spec add_att_to_index(server_map(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary()) -> binary_or_error().
+add_att_to_index(Conn, DbName, DocId, AName) ->
     #{server := #{url := Url}} = Db = kz_fixturedb_server:get_db(Conn, DbName),
     AttPath = att_path(Db, DocId, AName),
     Row = kz_term:to_binary(io_lib:format("~s, ~s, ~s", [DocId, AName, filename:basename(AttPath)])),
@@ -232,14 +233,12 @@ maybe_symlink_att_file(AName, AttPath) ->
             ?DEV_LOG("attchment ~s file doesn't exists", [AName])
     end.
 
-
 -spec add_view_to_index(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:proplist()) -> binary_or_error().
 add_view_to_index(DbName, Design, Options) ->
-    Plan = kz_fixturedb_server:get_dummy_plan(),
-    add_view_to_index(Plan, DbName, Design, Options).
+    add_view_to_index(kz_fixturedb_maintenance:new_connection(), DbName, Design, Options).
 
--spec add_view_to_index(map(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:proplist()) -> binary_or_error().
-add_view_to_index(#{server := {_, Conn}}=_Plan, DbName, Design, Options) ->
+-spec add_view_to_index(server_map(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:proplist()) -> binary_or_error().
+add_view_to_index(Conn, DbName, Design, Options) ->
     #{server := #{url := Url}} = Db = kz_fixturedb_server:get_db(Conn, DbName),
     ViewPath = view_path(Db, Design, Options),
     Row = kz_term:to_binary(io_lib:format("~s, ~1000p, ~s", [Design, Options, filename:basename(ViewPath)])),
@@ -285,25 +284,25 @@ get_default_fixtures_db(DbName) ->
 %%------------------------------------------------------------------------------
 -spec read_json(file:filename_all()) -> {'ok', kz_json:object() | kz_json:objects()} | {'error', 'not_found'}.
 read_json(Path) ->
-    case read_file(Path) of
-        {'ok', Bin} -> {'ok', kz_json:decode(Bin)};
-        {'error', _} -> {'error', 'not_found'}
-    end.
+    process_read_json(read_file(Path)).
+
+process_read_json({'ok', Bin}) -> {'ok', kz_json:decode(Bin)};
+process_read_json({'error', _}) -> {'error', 'not_found'}.
 
 -spec read_file(file:filename_all()) -> binary_or_error().
 read_file(Path) ->
-    case file:read_file(Path) of
-        {'ok', _}=OK -> OK;
-        {'error', _} -> {'error', 'not_found'}
-    end.
+    process_read_file(file:read_file(Path)).
+
+process_read_file({'ok', _}=OK) -> OK;
+process_read_file({'error', _}) -> {'error', 'not_found'}.
 
 -spec update_index_file(file:filename_all(), kz_term:ne_binary(), kz_term:ne_binary()) ->
-                               binary_or_error().
+          binary_or_error().
 update_index_file(Path, Header, NewLine) ->
     write_index_file(Path, NewLine, read_index_file(Path, Header, NewLine)).
 
 -spec write_index_file(file:filename_all(), kz_term:ne_binary(), binary_or_error()) ->
-                              binary_or_error().
+          binary_or_error().
 write_index_file(_, _, {'error', _}=Error) ->
     Error;
 write_index_file(Path, NewLine, {'ok', IndexLines}) ->
@@ -355,3 +354,12 @@ design_view(Design) ->
         [DesignName] -> DesignName;
         [DesignName, ViewName|_] -> <<DesignName/binary, "+", ViewName/binary>>
     end.
+
+-spec view_index_to_disk(kz_term:ne_binary(), kz_term:ne_binary(), kz_datamgr:view_options()) -> 'ok'.
+view_index_to_disk(Database, ViewName, Options) ->
+    Path = get_view_path(Database, ViewName, Options),
+    'ok' = filelib:ensure_dir(Path),
+
+    {'ok', Results} = kz_datamgr:get_results(Database, ViewName, Options),
+    lager:info(" persisting view index ~s/~s to ~s", [Database, ViewName, Path]),
+    'ok' = file:write_file(Path, kz_json:encode(Results, ['pretty'])).

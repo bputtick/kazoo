@@ -1,6 +1,11 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2013-2019, 2600Hz
+%%% @copyright (C) 2013-2020, 2600Hz
 %%% @doc Track the FreeSWITCH channel information, and provide accessors
+%%%
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
 %%%
 %%% @end
 %%%-----------------------------------------------------------------------------
@@ -34,7 +39,7 @@ init() ->
 
 -spec publish_call_event(map()) -> any().
 publish_call_event(#{payload := JObj}=Map) ->
-    kz_util:put_callid(JObj),
+    kz_log:put_callid(JObj),
     EventName = kz_api:event_name(JObj),
     case lists:member(EventName, ?EXCLUDE_PUBLISH_EVENTS) of
         'true' -> 'ok';

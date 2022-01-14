@@ -21,6 +21,8 @@ Key | Description | Type | Default | Required | Support Level
 `conference_numbers` | Defines conference numbers that can be used by members or moderators | `array(string())` | `[]` | `false` |  
 `controls` | controls | `object()` |   | `false` |  
 `domain` | domain | `string()` |   | `false` |  
+`flags.[]` |   | `string()` |   | `false` | `supported`
+`flags` | Flags set by external applications | `array(string())` |   | `false` | `supported`
 `focus` | This is a read-only property indicating the media server hosting the conference | `string()` |   | `false` |  
 `language` | Prompt language to play in the conference | `string()` |   | `false` |  
 `max_members_media` | Media to play when the conference is full | `string()` |   | `false` |  
@@ -155,6 +157,8 @@ Key | Description | Type | Default | Required | Support Level
 `conference_numbers` | Defines conference numbers that can be used by members or moderators | `array(string())` | `[]` | `false` |  
 `controls` | controls | `object()` |   | `false` |  
 `domain` | domain | `string()` |   | `false` |  
+`flags.[]` |   | `string()` |   | `false` | `supported`
+`flags` | Flags set by external applications | `array(string())` |   | `false` | `supported`
 `focus` | This is a read-only property indicating the media server hosting the conference | `string()` |   | `false` |  
 `language` | Prompt language to play in the conference | `string()` |   | `false` |  
 `max_members_media` | Media to play when the conference is full | `string()` |   | `false` |  
@@ -382,7 +386,7 @@ curl -v -X PUT \
 
 ### Relate participants
 
- The `relate` action takes a `data` object:
+The `relate` action takes a `data` object:
 
 ```
 {
@@ -397,11 +401,23 @@ curl -v -X PUT \
 }
 ```
 
-Key | Description | Type | Default | Required
---- | ----------- | ---- | ------- | --------
-`other_participant` | The other participant ID to relate | `string() | integer()` |   | `true`
-`participant_id` | The participant ID to relate | `string() | integer()` |   | `true`
-`relationship` | The relationship to establish between the two participants | `string('deaf' | 'clear' | 'mute')` | `clear` | `false`
+
+#### Schema
+
+Relate two participants to each other in a conference
+
+
+
+Key | Description | Type | Default | Required | Support Level
+--- | ----------- | ---- | ------- | -------- | -------------
+`conference_id` | The ID of the conference | `string()` |   | `true` |
+`other_participant` | The other participant ID to relate | `string() | integer()` |   | `true` |
+`participant_id` | The participant ID to relate | `string() | integer()` |   | `true` |
+`relationship` | The relationship to establish between the two participants | `string('deaf' | 'clear' | 'mute')` | `clear` | `false` |
+
+
+
+#### API example
 
 ```shell
 curl -v -X PUT \

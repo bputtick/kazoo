@@ -1,8 +1,13 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
-%%% @doc Listing of all expected v1 callbacks
+%%% @copyright (C) 2011-2020, 2600Hz
+%%% @doc Crossbar API for comment.
 %%% @author Karl Anderson
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(cb_comments).
@@ -109,7 +114,7 @@ validate(Context) ->
     validate_comments(C1, Type, cb_context:req_verb(Context)).
 
 -spec validate_comments(cb_context:context(), path_token(), http_method()) ->
-                               cb_context:context().
+          cb_context:context().
 validate_comments(Context, _, ?HTTP_GET) ->
     summary(Context);
 validate_comments(Context, _, ?HTTP_PUT) ->
@@ -134,7 +139,7 @@ validate(Context, Id) ->
     validate_comment(C1, Id, Type, cb_context:req_verb(Context)).
 
 -spec validate_comment(cb_context:context(), path_token(), path_token(), http_method()) ->
-                              cb_context:context().
+          cb_context:context().
 validate_comment(Context, _, <<"port_requests">>, _) ->
     Msg = kz_json:from_list(
             [{<<"message">>, <<"operation on a single comment is not allowed">>}
@@ -254,18 +259,19 @@ create(Context) ->
 -spec create(cb_context:context(), {kz_term:ne_binary(), kz_term:ne_binaries()}) -> cb_context:context().
 create(Context, {<<"port_requests">>, _}) ->
     NewComments = cb_context:fetch(Context, 'req_comments', []),
-    case phonebook:maybe_add_comment(Context, NewComments) of
+    case cb_modules_util:phonebook_comment(Context, NewComments) of
         {'ok', _} ->
             crossbar_doc:save(Context);
         {'error', _} ->
-            cb_context:add_system_error('datastore_fault', <<"unable to submit comment to carrier">>, Context)
+            Context1 = cb_context:store(Context, 'req_comments', []),
+            cb_context:add_system_error('datastore_fault', <<"unable to submit comment to carrier">>, Context1)
     end;
 create(Context, _Resource) ->
     Doc = cb_context:doc(Context),
-    Comments = kz_json:get_value(?COMMENTS, Doc, []),
+    Comments = kzd_comments:comments(Doc),
     ReqData = cb_context:req_data(Context),
-    NewComments = kz_json:get_value(?COMMENTS, ReqData, []),
-    Doc1 = kz_json:set_value(?COMMENTS, sort(Comments ++ NewComments), Doc),
+    NewComments = kzd_comments:comments(ReqData),
+    Doc1 = kzd_comments:set_comments(Doc, sort(Comments ++ NewComments)),
     crossbar_doc:save(cb_context:set_doc(Context, Doc1)).
 
 %%------------------------------------------------------------------------------
@@ -275,18 +281,14 @@ create(Context, _Resource) ->
 -spec update(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
 update(Context, Id) ->
     Doc = cb_context:doc(Context),
-    Comments = kz_json:get_value(?COMMENTS, Doc, []),
+    Comments = kzd_comments:comments(Doc),
     Number = id_to_number(Id),
 
     Comment = cb_context:req_data(Context),
     {Head, Tail} = lists:split(Number, Comments),
     Head1 = lists:delete(lists:last(Head), Head),
 
-    Doc1 =
-        kz_json:set_value(?COMMENTS
-                         ,sort(lists:append([Head1, [Comment], Tail]))
-                         ,Doc
-                         ),
+    Doc1 = kzd_comments:set_comments(Doc, sort(lists:append([Head1, [Comment], Tail]))),
     crossbar_doc:save(cb_context:set_doc(Context, Doc1)).
 
 %%------------------------------------------------------------------------------
@@ -296,20 +298,16 @@ update(Context, Id) ->
 
 -spec remove(cb_context:context()) -> cb_context:context().
 remove(Context) ->
-    Doc = kz_json:set_value(?COMMENTS, [], cb_context:doc(Context)),
+    Doc = kzd_comments:set_comments(cb_context:doc(Context), []),
     crossbar_doc:save(cb_context:set_doc(Context, Doc)).
 
 -spec remove(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
 remove(Context, Id) ->
     Doc = cb_context:doc(Context),
-    Comments = kz_json:get_value(?COMMENTS, Doc, []),
+    Comments = kzd_comments:comments(Doc),
     Number = id_to_number(Id),
     Comment = lists:nth(Number, Comments),
-    Doc1 =
-        kz_json:set_value(?COMMENTS
-                         ,lists:delete(Comment, Comments)
-                         ,Doc
-                         ),
+    Doc1 = kzd_comments:set_comments(Doc, lists:delete(Comment, Comments)),
     crossbar_doc:save(cb_context:set_doc(Context, Doc1)).
 
 %%------------------------------------------------------------------------------
@@ -330,13 +328,13 @@ finish_req(_Context, _Type, _Verb) -> 'ok'.
 %% @end
 %%------------------------------------------------------------------------------
 -spec check_comment_number(cb_context:context(), kz_term:ne_binary()) ->
-                                  cb_context:context().
+          cb_context:context().
 check_comment_number(Context, Id) ->
     Context1 = load_doc(Context),
     case cb_context:resp_status(Context1) of
         'success' ->
             Doc = cb_context:doc(Context1),
-            Comments = kz_json:get_value(?COMMENTS, Doc, []),
+            Comments = kzd_comments:comments(Doc),
             Number = id_to_number(Id),
             case erlang:length(Comments) of
                 Length when Length < Number ->
@@ -356,7 +354,7 @@ load_doc(Context) ->
     load_doc(Context, Type, Id).
 
 -spec load_doc(cb_context:context(), kz_term:ne_binary(), kz_term:ne_binaries()) ->
-                      cb_context:context().
+          cb_context:context().
 load_doc(Context0, <<"port_requests">>, [Id]) ->
     Comments = kzd_port_requests:comments(cb_context:req_data(Context0), []),
     Context1 = cb_context:store(Context0, 'req_comments', Comments),
@@ -388,10 +386,10 @@ only_return_comments(Context) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec only_return_comment(cb_context:context(), kz_term:ne_binary()) ->
-                                 cb_context:context().
+          cb_context:context().
 only_return_comment(Context, Id) ->
     Doc = cb_context:doc(Context),
-    Comments = kz_json:get_value(?COMMENTS, Doc, []),
+    Comments = kzd_comments:comments(Doc),
     Number = id_to_number(Id),
     cb_context:set_resp_data(Context
                             ,lists:nth(Number, Comments)
@@ -405,7 +403,7 @@ get_comments(Context, <<"port_requests">>) ->
     Doc = cb_context:doc(Context),
     kzd_port_requests:comments(cb_port_requests:filter_private_comments(Context, Doc), []);
 get_comments(Context, _) ->
-    kz_json:get_value(?COMMENTS, cb_context:doc(Context), []).
+    kzd_comments:comments(cb_context:doc(Context)).
 
 %%------------------------------------------------------------------------------
 %% @doc

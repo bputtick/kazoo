@@ -1,19 +1,24 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc
 %%% @author Peter Defebvre
 %%% @author Karl Anderson
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(cb_services).
 
 -export([init/0
         ,authorize/2
-        ,allowed_methods/0, allowed_methods/1, allowed_methods/2
-        ,resource_exists/0, resource_exists/1, resource_exists/2
+        ,allowed_methods/0, allowed_methods/1, allowed_methods/2, allowed_methods/3
+        ,resource_exists/0, resource_exists/1, resource_exists/2, resource_exists/3
         ,content_types_provided/1 ,content_types_provided/2
         ,to_csv/1
-        ,validate/1, validate/2, validate/3
+        ,validate/1, validate/2, validate/3, validate/4
         ,post/1 ,post/2
         ,patch/2
         ,delete/2
@@ -74,6 +79,8 @@ is_authorized(_Context, ?HTTP_GET, [{<<"services">>, [?EDITABLE]}]) ->
     'true';
 is_authorized(_Context, ?HTTP_GET, [{<<"services">>, [?QUOTE]}]) ->
     'true';
+is_authorized(Context, ?HTTP_GET, [{<<"services">>, [?AUDIT, ?SUMMARY]}]) ->
+    kz_services_reseller:is_reseller(cb_context:account_id(Context));
 is_authorized(_Context, _, _) ->
     'false'.
 
@@ -111,8 +118,15 @@ allowed_methods(_PlanId) ->
     [?HTTP_POST, ?HTTP_DELETE].
 
 -spec allowed_methods(path_token(), path_token()) -> http_methods().
+allowed_methods(?AUDIT, ?SUMMARY) ->
+    [?HTTP_GET];
 allowed_methods(?AUDIT, _AuditId) ->
     [?HTTP_GET].
+
+-spec allowed_methods(path_token(), path_token(), path_token()) -> http_methods().
+allowed_methods(?AUDIT, ?SUMMARY, _SourceService) ->
+    [?HTTP_GET].
+
 
 %%------------------------------------------------------------------------------
 %% @doc Does the path point to a valid resource.
@@ -132,7 +146,10 @@ resource_exists() -> 'true'.
 resource_exists(_) -> 'true'.
 
 -spec resource_exists(path_token(), path_token()) -> 'true'.
-resource_exists(_, _) -> 'true'.
+resource_exists(?AUDIT, _) -> 'true'.
+
+-spec resource_exists(path_token(), path_token(), path_token()) -> 'true'.
+resource_exists(?AUDIT, ?SUMMARY, _) -> 'true'.
 
 %%------------------------------------------------------------------------------
 %% @doc Add content types accepted and provided by this module
@@ -161,7 +178,7 @@ to_csv({Req, Context}) ->
     {Req, to_response(Context, <<"csv">>, cb_context:req_nouns(Context))}.
 
 -spec to_response(cb_context:context(), kz_term:ne_binary(), req_nouns()) ->
-                         cb_context:context().
+          cb_context:context().
 to_response(Context, _, [{<<"services">>, [?SUMMARY]}, {?KZ_ACCOUNTS_DB, _}|_]) ->
     JObj = cb_context:resp_data(Context),
     case kz_json:get_list_value(<<"invoices">>, JObj, []) of
@@ -201,14 +218,17 @@ validate(Context, ?EDITABLE) ->
     list_editable(Context);
 validate(Context, ?AVAILABLE) ->
     %% NOTE: list service plans available to this account for selection
-    AccountId = cb_context:account_id(Context),
-    ResellerId = kz_services_reseller:get_id(AccountId),
-    ResellerDb = kz_util:format_account_id(ResellerId, 'encoded'),
-    crossbar_doc:load_view(?CB_LIST
-                          ,[]
-                          ,cb_context:set_account_db(Context, ResellerDb)
-                          ,fun normalize_available_view_results/2
-                          );
+    ResellerId = kz_services_reseller:get_id(cb_context:account_id(Context)),
+    IncludeDocs =
+        case kz_term:is_true(cb_context:req_value(Context, <<"details">>, 'false')) of
+            'false' -> [];
+            'true' -> ['include_docs']
+        end,
+    Options = [{'databases', [kzs_util:format_account_db(ResellerId)]}
+              ,{'mapper', fun normalize_available_view_results/2}
+               | IncludeDocs
+              ],
+    crossbar_view:load(Context, ?CB_LIST, Options);
 validate(Context, ?SUMMARY) ->
     %% NOTE: summarize this accounts billing details based on the assigned service plans
     cb_context:setters(Context
@@ -238,12 +258,105 @@ validate(Context, ?AUDIT, ?MATCH_MODB_PREFIX(Year, Month, _)=AuditId) ->
     %% NOTE: show a billing audit log
     AccountId = cb_context:account_id(Context),
     AccountDb = kazoo_modb:get_modb(AccountId, kz_term:to_integer(Year), kz_term:to_integer(Month)),
-    Context1 = cb_context:set_account_db(Context, AccountDb),
+    Context1 = cb_context:set_db_name(Context, AccountDb),
     crossbar_doc:load(AuditId, Context1, ?TYPE_CHECK_OPTION(<<"audit_log">>));
+validate(Context, ?AUDIT, ?SUMMARY) ->
+    StartKeyFun = fun(Timestamp) -> [audit_summary_range_key(Timestamp)] end,
+    EndKeyFun = fun(Timestamp) -> [audit_summary_range_key(Timestamp), <<16#fff0/utf8>>] end,
+    ViewOptions = [{'group_level', 2}
+                  ,{'mapper', fun normalize_day_summary_by_date/2}
+                  ,{'range_start_keymap', StartKeyFun}
+                  ,{'range_end_keymap', EndKeyFun}
+                  ],
+    ViewName = <<"services/day_summary_by_date">>,
+    audit_summary(Context, ViewName, ViewOptions);
 validate(Context, ?AUDIT, AuditId) ->
     ErrorCause = kz_json:from_list([{<<"cause">>, AuditId}]),
     cb_context:add_system_error('bad_identifier', ErrorCause, Context).
 
+-spec validate(cb_context:context(), path_token(), path_token(), path_token()) -> cb_context:context().
+validate(Context, ?AUDIT, ?SUMMARY, SourceService) ->
+    RangeKeyFun = fun(Timestamp) -> audit_summary_range_key(SourceService, Timestamp) end,
+    ViewOptions = [{'group_level', 2}
+                  ,{'mapper', fun normalize_day_summary_by_source/2}
+                  ,{'range_start_keymap', RangeKeyFun}
+                  ,{'range_end_keymap', RangeKeyFun}
+                  ],
+    ViewName = <<"services/day_summary_by_source">>,
+    audit_summary(Context, ViewName, ViewOptions).
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec audit_summary(cb_context:context(), kz_term:ne_binary(), crossbar_view:options()) -> cb_context:context().
+audit_summary(Context, ViewName, Options) ->
+    ViewOptions = [{'group', 'true'}
+                  ,{'reduce', 'true'}
+                  ,{'unchunkable', 'true'}
+                  ,{'no_filter', 'true'}
+                  ,{'should_paginate', 'false'}
+                   | maybe_add_max_range(Context, Options)
+                  ],
+    crossbar_view:load_yodb(Context, ViewName, ViewOptions).
+
+-spec maybe_add_max_range(cb_context:context(), crossbar_view:options()) -> crossbar_view:options().
+maybe_add_max_range(Context, Options) ->
+    case kz_term:safe_cast(cb_context:req_value(Context, <<"created_to">>), 'undefined', fun kz_term:to_integer/1) of
+        T when is_integer(T)
+               andalso T > 0 ->
+            [{'max_range', ?SECONDS_IN_YEAR} | Options];
+        _ -> Options
+    end.
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec audit_summary_range_key(integer()) -> crossbar_view:range_keymap().
+audit_summary_range_key(Timestamp) when is_integer(Timestamp) ->
+    {{Year, Month, Day}, _} = calendar:gregorian_seconds_to_datetime(Timestamp),
+    kz_term:to_binary(
+      [kz_term:to_binary(Year), "-", kz_date:pad_month(Month), "-", kz_date:pad_day(Day)]
+     ).
+
+-spec audit_summary_range_key(kz_term:ne_binary(), integer()) -> crossbar_view:range_keymap().
+audit_summary_range_key(SourceService, Timestamp) ->
+    [SourceService, audit_summary_range_key(Timestamp)].
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec normalize_day_summary_by_date(kz_json:object(), kz_json:objects()) -> kz_json:objects().
+normalize_day_summary_by_date(JObj, []) ->
+    [DateString, SourceService] = kz_json:get_value(<<"key">>, JObj),
+    [kz_json:set_value([SourceService, DateString]
+                      ,kz_json:get_value(<<"value">>, JObj)
+                      ,kz_json:new()
+                      )
+    ];
+normalize_day_summary_by_date(JObj, [Acc]) ->
+    [DateString, SourceService] = kz_json:get_value(<<"key">>, JObj),
+    [kz_json:set_value([SourceService, DateString]
+                      ,kz_json:get_value(<<"value">>, JObj)
+                      ,Acc
+                      )
+    ].
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec normalize_day_summary_by_source(kz_json:object(), kz_json:objects()) -> kz_json:objects().
+normalize_day_summary_by_source(JObj, Acc) ->
+    [_SourceService, DateString] = kz_json:get_value(<<"key">>, JObj),
+    [kz_json:from_list([{DateString, kz_json:get_value(<<"value">>, JObj)}]) | Acc].
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
 -spec validate_service_plan(cb_context:context(), path_token(), http_method()) -> cb_context:context().
 validate_service_plan(Context, ?SYNCHRONIZATION, ?HTTP_POST) ->
     %% NOTE: sync this accounts billing details with the bookkeeper
@@ -456,7 +569,10 @@ list_resellers_editable(Context, AccountId) ->
 %%------------------------------------------------------------------------------
 -spec load_audit_logs(cb_context:context()) -> cb_context:context().
 load_audit_logs(Context) ->
-    Options = [{'mapper', fun normalize_audit_view_results/2}],
+    Options = [{'mapper', fun normalize_audit_view_results/2}
+              ,{'range_start_keymap', []}
+              ,{'range_end_keymap', crossbar_view:suffix_key_fun([kz_json:new()])}
+              ],
     crossbar_view:load_modb(Context, ?AUDIT_LOG_LIST, Options).
 
 %%------------------------------------------------------------------------------
@@ -569,16 +685,19 @@ pipe_services(Context, Routines, RespFunction) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec normalize_available_view_results(kz_json:object(), kz_json:objects()) ->
-                                              kz_json:objects().
+          kz_json:objects().
 normalize_available_view_results(JObj, Acc) ->
-    [kz_json:get_json_value(<<"value">>, JObj)|Acc].
+    case kz_json:get_ne_json_value(<<"doc">>, JObj) of
+        'undefined' -> [kz_json:get_json_value(<<"value">>, JObj)|Acc];
+        Doc -> [kz_doc:public_fields(Doc)|Acc]
+    end.
 
 %%------------------------------------------------------------------------------
 %% @doc Normalizes the results of a view.
 %% @end
 %%------------------------------------------------------------------------------
 -spec normalize_audit_view_results(kz_json:object(), kz_json:objects()) ->
-                                          kz_json:objects().
+          kz_json:objects().
 normalize_audit_view_results(JObj, Acc) ->
     [kz_json:get_json_value(<<"value">>, JObj)|Acc].
 
@@ -668,10 +787,10 @@ check_plan_ids(Context, ResellerId, PlanIds) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec check_plan_id(cb_context:context(), path_token(), kz_term:ne_binary()) ->
-                           cb_context:context().
+          cb_context:context().
 check_plan_id(Context, PlanId, ResellerId) ->
-    ResellerDb = kz_util:format_account_id(ResellerId, 'encoded'),
-    crossbar_doc:load(PlanId, cb_context:set_account_db(Context, ResellerDb), ?TYPE_CHECK_OPTION(kzd_service_plan:type())).
+    ResellerDb = kzs_util:format_account_db(ResellerId),
+    crossbar_doc:load(PlanId, cb_context:set_db_name(Context, ResellerDb), ?TYPE_CHECK_OPTION(kzd_service_plan:type())).
 
 -spec maybe_forbid_delete(cb_context:context()) -> cb_context:context().
 maybe_forbid_delete(Context) ->

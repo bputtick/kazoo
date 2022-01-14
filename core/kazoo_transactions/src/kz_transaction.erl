@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2013-2019, 2600Hz
+%%% @copyright (C) 2013-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_transaction).
@@ -127,7 +131,7 @@
 %%------------------------------------------------------------------------------
 -spec set_account(transaction(), kz_term:ne_binary()) -> transaction().
 set_account(Transaction, Account) ->
-    AccountId = kz_util:format_account_id(Account, 'raw'),
+    AccountId = kzs_util:format_account_id(Account),
     Setters = [{fun set_account_id/2, AccountId}
               ,{fun set_account_name/2, kzd_accounts:fetch_name(AccountId)}
                | set_bookkeeper(Account)

@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(pqc_cb_users).
@@ -17,11 +22,12 @@
 
 -export([seq/0
         ,cleanup/0
+        ,new_user/0
         ]).
 
 -include("kazoo_proper.hrl").
 
--define(ACCOUNT_NAMES, [<<"account_for_users">>]).
+-define(ACCOUNT_NAMES, [<<?MODULE_STRING>>]).
 
 -spec summary(pqc_cb_api:state(), kz_term:ne_binary()) -> pqc_cb_api:response().
 summary(API, AccountId) ->
@@ -117,7 +123,7 @@ user_url(AccountId, UserId) ->
 
 -spec seq() -> 'ok'.
 seq() ->
-    API = pqc_cb_api:init_api(['crossbar'], ['cb_users_v2']),
+    API = pqc_cb_api:init_api(['crossbar'], ['cb_users']),
     AccountId = create_account(API),
 
     'ok' = create_simple_user(API, AccountId),

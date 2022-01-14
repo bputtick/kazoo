@@ -31,6 +31,8 @@ Key | Description | Type | Default | Required | Support Level
 `do_not_disturb.enabled` | The default value for do-not-disturb | `boolean()` |   | `false` |  
 `do_not_disturb` |   | `object()` |   | `false` |  
 `enabled` | Determines if the account is currently enabled | `boolean()` | `true` | `false` | `supported`
+`flags.[]` |   | `string()` |   | `false` | `supported`
+`flags` | Flags set by external applications | `array(string())` |   | `false` | `supported`
 `formatters` | Schema for request formatters | [#/definitions/formatters](#formatters) |   | `false` |  
 `language` | The language for this account | `string()` |   | `false` | `supported`
 `metaflows` | Actions applied to a call outside of the normal callflow, initiated by the caller(s) | [#/definitions/metaflows](#metaflows) |   | `false` |  
@@ -670,6 +672,8 @@ curl -v -X PUT \
 ## Move an account
 
 An account can only be moved by a "superduper_admin" or  if enabled by anyone above the desired account.
+
+**NOTE**: Kazoo does NOT support moving accounts between reseller accounts.
 
 You can enable that feature by editing the document `crossbar.accounts` in your `system_config` database and set the value to `tree`.
 

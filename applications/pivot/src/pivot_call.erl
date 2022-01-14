@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc Handle processing of the pivot call
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(pivot_call).
@@ -29,6 +34,9 @@
 -include("pivot.hrl").
 
 -define(SERVER, ?MODULE).
+-define(DEFAULT_REQ_TIMEOUT_MS
+       ,kapps_config:get_integer(?APP_NAME, <<"request_timeout_ms">>, 5 * ?MILLISECONDS_IN_SECOND)
+       ).
 
 -type http_method() :: 'get' | 'post'.
 
@@ -36,6 +44,7 @@
                ,cdr_uri :: kz_term:api_ne_binary()
                ,request_format = <<"kazoo">> :: kz_term:ne_binary()
                ,request_body_format = <<"form">> :: kz_term:ne_binary()
+               ,request_timeout_ms :: pos_integer()
                ,method = 'get' :: http_method()
                ,call :: kapps_call:call() | 'undefined'
                ,request_id :: kz_http:req_id() | 'undefined'
@@ -130,17 +139,17 @@ handle_call_event(JObj, Props) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec init([kapps_call:call() | kz_json:object()]) -> {'ok', state(), 'hibernate'} |
-                                                      {'stop', 'normal'}.
+          {'stop', 'normal'}.
 init([Call, JObj]) ->
     init(Call, JObj, kapps_call_events:is_destroyed(Call)).
 
 -spec init(kapps_call:call(), kz_json:object(), boolean()) -> {'ok', state(), 'hibernate'} |
-                                                              {'stop', 'normal'}.
+          {'stop', 'normal'}.
 init(_Call, _JObj, 'true') ->
     lager:info("call has gone down while we started up"),
     {'stop', 'normal'};
 init(Call, JObj, 'false') ->
-    kz_util:put_callid(kapps_call:call_id(Call)),
+    kz_log:put_callid(kapps_call:call_id(Call)),
 
     Method = kzt_util:http_method(kz_json:get_value(<<"HTTP-Method">>, JObj, 'get')),
     VoiceUri = kz_json:get_value(<<"Voice-URI">>, JObj),
@@ -158,6 +167,7 @@ init(Call, JObj, 'false') ->
            ,call=kzt_util:increment_iteration(Call)
            ,request_format=ReqFormat
            ,request_body_format=ReqBodyFormat
+           ,request_timeout_ms=kz_json:get_integer_value(<<"Request-Timeout">>, JObj, ?DEFAULT_REQ_TIMEOUT_MS)
            ,debug=kz_json:is_true(<<"Debug">>, JObj, 'false')
            ,requester_queue = kapps_call:controller_queue(Call)
            }
@@ -177,7 +187,7 @@ handle_call(_Request, _From, State) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec handle_cast(any(), state()) -> {'noreply', state()} |
-                                     {'stop', 'normal', state()}.
+          {'stop', 'normal', state()}.
 handle_cast('usurp', State) ->
     lager:debug("terminating pivot call because of usurp"),
     {'stop', 'normal', State#state{call='undefined'}};
@@ -191,10 +201,11 @@ handle_cast({'request', Uri, Method, Params}
                   ,debug=Debug
                   ,requester_queue=Q
                   ,request_body_format=ReqBodyFormat
+                  ,request_timeout_ms=TimeoutMs
                   }=State) ->
     Call1 = kzt_util:set_voice_uri(Uri, Call),
 
-    case send_req(Call1, Uri, Method, Params, ReqBodyFormat, Debug) of
+    case send_req(Call1, Uri, Method, Params, ReqBodyFormat, TimeoutMs, Debug) of
         {'ok', ReqId, Call2} ->
             lager:debug("sent request ~p to '~s' via '~s'", [ReqId, Uri, Method]),
             {'noreply'
@@ -289,7 +300,7 @@ handle_cast(_Req, State) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec handle_info(any(), state()) -> {'noreply', state()} |
-                                     {'stop', any(), state()}.
+          {'stop', any(), state()}.
 handle_info({'stop', _Call}, State) ->
     {'stop', 'normal', State};
 handle_info({'http', {ReqId, 'stream_start', Hdrs}}
@@ -335,7 +346,7 @@ handle_info({'http', {ReqId, 'stream_end', FinalHeaders}}
                  ,Body
                  ,AMQPConsumer
                  ],
-    {Pid, Ref} = kz_util:spawn_monitor(fun handle_resp/5, HandleArgs),
+    {Pid, Ref} = kz_process:spawn_monitor(fun handle_resp/5, HandleArgs),
     lager:debug("processing resp with ~p(~p)", [Pid, Ref]),
     {'noreply'
     ,State#state{request_id = 'undefined'
@@ -436,34 +447,34 @@ code_change(_OldVsn, State, _Extra) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec send_req(kapps_call:call(), kz_term:ne_binary(), http_method(), kz_json:object() | kz_term:proplist(), kz_term:ne_binary(), boolean()) ->
-                      {'ok', kz_http:req_id(), kapps_call:call()} |
-                      {'stop', kapps_call:call()}.
-send_req(Call, Uri, Method, BaseParams, ReqBodyFormat, Debug) when not is_list(BaseParams) ->
-    send_req(Call, Uri, Method, kz_json:to_proplist(BaseParams), ReqBodyFormat, Debug);
-send_req(Call, Uri, 'get', BaseParams, _ReqBodyFormat, Debug) ->
+-spec send_req(kapps_call:call(), kz_term:ne_binary(), http_method(), kz_json:object() | kz_term:proplist(), kz_term:ne_binary(), pos_integer(), boolean()) ->
+          {'ok', kz_http:req_id(), kapps_call:call()} |
+          {'stop', kapps_call:call()}.
+send_req(Call, Uri, Method, BaseParams, ReqBodyFormat, TimeoutMs, Debug) when not is_list(BaseParams) ->
+    send_req(Call, Uri, Method, kz_json:to_proplist(BaseParams), ReqBodyFormat, TimeoutMs, Debug);
+send_req(Call, Uri, 'get', BaseParams, _ReqBodyFormat, TimeoutMs, Debug) ->
     UserParams = kzt_translator:get_user_vars(Call),
     Params = kz_json:set_values(BaseParams, UserParams),
     UpdatedCall = kapps_call:kvs_erase(<<"digits_collected">>, Call),
-    send(UpdatedCall, uri(Uri, format_request(Params, <<"form">>)), 'get', [], [], Debug);
-send_req(Call, Uri, 'post', BaseParams, ReqBodyFormat, Debug) ->
+    send(UpdatedCall, uri(Uri, format_request(Params, <<"form">>)), 'get', [], [], TimeoutMs, Debug);
+send_req(Call, Uri, 'post', BaseParams, ReqBodyFormat, TimeoutMs, Debug) ->
     UserParams = kzt_translator:get_user_vars(Call),
     Params = kz_json:set_values(BaseParams, UserParams),
     UpdatedCall = kapps_call:kvs_erase(<<"digits_collected">>, Call),
     Headers = [{"Content-Type", req_content_type(ReqBodyFormat)}],
-    send(UpdatedCall, Uri, 'post', Headers, format_request(Params, ReqBodyFormat), Debug).
+    send(UpdatedCall, Uri, 'post', Headers, format_request(Params, ReqBodyFormat), TimeoutMs, Debug).
 
--spec send(kapps_call:call(), kz_term:ne_binary(), http_method(), kz_term:proplist(), iolist(), boolean()) ->
-                  {'ok', kz_http:req_id(), kapps_call:call()} |
-                  {'stop', kapps_call:call()}.
-send(Call, Uri, Method, ReqHdrs, ReqBody, Debug) ->
+-spec send(kapps_call:call(), kz_term:ne_binary(), http_method(), kz_term:proplist(), iolist(), pos_integer(), boolean()) ->
+          {'ok', kz_http:req_id(), kapps_call:call()} |
+          {'stop', kapps_call:call()}.
+send(Call, Uri, Method, ReqHdrs, ReqBody, TimeoutMs, Debug) ->
     lager:info("sending req to ~s(~s): ~s", [Uri, Method, iolist_to_binary(ReqBody)]),
 
     maybe_debug_req(Call, Uri, Method, ReqHdrs, ReqBody, Debug),
 
-    case kz_http:async_req(self(), Method, Uri, ReqHdrs, ReqBody) of
+    case kz_http:async_req(self(), Method, Uri, ReqHdrs, ReqBody, [{'timeout', TimeoutMs}]) of
         {'http_req_id', ReqId} ->
-            lager:debug("response coming in asynchronously to ~p", [ReqId]),
+            lager:debug("response coming in asynchronously to ~p(max ~p ms)", [ReqId, TimeoutMs]),
             {'ok', ReqId, Call};
         {'error', _Reason} ->
             lager:debug("error with req: ~p", [_Reason]),
@@ -478,7 +489,7 @@ normalize_resp_headers(Headers) ->
 handle_resp(RequesterQ, Call, CT, <<_/binary>> = RespBody, AMQPConsumer) ->
     _ = kz_amqp_channel:consumer_pid(AMQPConsumer),
 
-    kz_util:put_callid(kapps_call:call_id(Call)),
+    kz_log:put_callid(kapps_call:call_id(Call)),
     Srv = kzt_util:get_amqp_listener(Call),
 
     case process_resp(RequesterQ, Call, CT, RespBody) of
@@ -494,10 +505,10 @@ handle_resp(RequesterQ, Call, CT, <<_/binary>> = RespBody, AMQPConsumer) ->
     end.
 
 -spec process_resp(kz_term:api_binary(), kapps_call:call(), list() | binary(), binary()) ->
-                          {'stop', kapps_call:call()} |
-                          {'ok', kapps_call:call()} |
-                          {'request', kapps_call:call()} |
-                          {'usurp', kapps_call:call()}.
+          {'stop', kapps_call:call()} |
+          {'ok', kapps_call:call()} |
+          {'request', kapps_call:call()} |
+          {'usurp', kapps_call:call()}.
 process_resp(_, Call, _, <<>>) ->
     lager:debug("no response body, finishing up"),
     {'stop', Call};
@@ -613,7 +624,7 @@ debug_json_error(Call, Msg, Before, After, RespBody) ->
 store_debug(Call, Doc) when is_list(Doc) ->
     store_debug(Call, kz_json:from_list(Doc));
 store_debug(Call, DebugJObj) ->
-    AccountModDb = kz_util:format_account_mod_id(kapps_call:account_id(Call)),
+    AccountModDb = kzs_util:format_account_mod_id(kapps_call:account_id(Call)),
     JObj = debug_doc(Call, DebugJObj, AccountModDb),
 
     case kazoo_modb:save_doc(AccountModDb, JObj) of
@@ -624,7 +635,7 @@ store_debug(Call, DebugJObj) ->
     end.
 
 -spec debug_doc(kapps_call:call(), kz_json:object(), kz_term:ne_binary()) ->
-                       kz_json:object().
+          kz_json:object().
 debug_doc(Call, DebugJObj, AccountModDb) ->
     WithCallJObj = kz_json:set_values([{<<"call_id">>, kapps_call:call_id(Call)}
                                       ,{<<"iteration">>, kzt_util:iteration(Call)}

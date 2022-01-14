@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(teletype_maintenance).
@@ -100,7 +105,7 @@ restore_system_template(TemplateId) ->
     catch
         ?STACKTRACE(_E, _T, ST)
         io:format("  crashed for reason ~p:~p ~n", [_E, _T]),
-        kz_util:log_stacktrace(ST),
+        kz_log:log_stacktrace(ST),
         io:format("St: ~p~n~n", [ST])
 
         end.
@@ -130,7 +135,7 @@ list_templates_from_db(Db) ->
 %%------------------------------------------------------------------------------
 -spec remove_customization(kz_term:ne_binary()) -> 'no_return'.
 remove_customization(Account) ->
-    remove_customization(Account, list_templates_from_db(kz_util:format_account_db(Account))).
+    remove_customization(Account, list_templates_from_db(kzs_util:format_account_db(Account))).
 
 -spec remove_customization(kz_term:ne_binary(), kz_term:ne_binary() | kz_term:ne_binaries()) -> 'no_return'.
 remove_customization(Account, Id) when is_binary(Id) ->
@@ -140,7 +145,7 @@ remove_customization(_Account, []) ->
     'no_return';
 remove_customization(Account, Ids) ->
     io:format(":: removing ~b template customization(s) from ~s~n", [length(Ids), Account]),
-    case kz_datamgr:del_docs(kz_util:format_account_db(Account), Ids) of
+    case kz_datamgr:del_docs(kzs_util:format_account_db(Account), Ids) of
         {'ok', JObjs} ->
             _ = [io:format("  ~s: ~s~n", [kz_notification:resp_id(kz_doc:id(J)), kz_json:get_value(<<"error">>, J, <<"deleted">>)])
                  || J <- JObjs
@@ -168,7 +173,7 @@ force_system_default(_Account, []) -> 'no_return';
 force_system_default(Account, Ids) ->
     _ = remove_customization(Account),
     io:format("~n:: forcing ~b system default template(s) for account ~s~n", [length(Ids), Account]),
-    AccountDb = kz_util:format_account_db(Account),
+    AccountDb = kzs_util:format_account_db(Account),
     _ = [copy_from_system_to_account(AccountDb, Id) || Id <- Ids],
     'no_return'.
 
@@ -206,7 +211,7 @@ start_module(Module) when is_atom(Module) ->
         lager:error("failed to start teletype module ~s with reason: ~s ~p"
                    ,[Module, _Type, Reason]
                    ),
-        kz_util:log_stacktrace(ST),
+        kz_log:log_stacktrace(ST),
         {'error', Reason}
         end;
 start_module(Module) ->
@@ -226,8 +231,8 @@ stop_module(Module) ->
     end.
 
 -spec module_from_binary(kz_term:ne_binary()) ->
-                                {'ok', module()} |
-                                {'error', 'invalid_mod'}.
+          {'ok', module()} |
+          {'error', 'invalid_mod'}.
 module_from_binary(<<"teletype_", _/binary>> = Template) ->
     case kz_module:ensure_loaded(Template) of
         'false' -> invalid_module(Template);

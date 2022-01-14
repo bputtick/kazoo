@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(media_proxy_handler).
@@ -20,7 +24,7 @@
 
 -spec init(cowboy_req:req(), any()) -> {'ok', cowboy_req:req(), state() | 'ok'}.
 init(Req, [StreamType]) ->
-    kz_util:put_callid(kz_binary:rand_hex(16)),
+    kz_log:put_callid(kz_binary:rand_hex(16)),
     lager:info("starting ~s media proxy", [StreamType]),
     case cowboy_req:path_info(Req) of
         [<<"tts">>, Id] ->
@@ -66,7 +70,7 @@ init_from_doc(Url, Req, StreamType) ->
             end
     catch
         ?STACKTRACE(_E, _R, ST)
-        kz_util:log_stacktrace(ST),
+        kz_log:log_stacktrace(ST),
         lager:debug("exception thrown: ~s: ~p", [_E, _R]),
         Req1 = cowboy_req:reply(404, Req),
         {'ok', Req1, 'ok'}

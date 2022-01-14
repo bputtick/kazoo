@@ -27,13 +27,19 @@ make kazoo
 JOBS=4 make kazoo
 ```
 
-## `make clean`
+## Cleanup
+
+### `make clean`
 
 Cleans the ebin/ directories of `core/` and `applications`, as well as any application-specific cleanup.
 
 ### `make clean-deps`
 
 Cleans the `deps/` directory. `make deps` is required to build it again.
+
+### `make sparkly-clean`
+
+Cleans up kazoo, releases, and deps in one target.
 
 ## `make compile-test`
 
@@ -163,6 +169,12 @@ Attempts to build the docs site with `mkdocs` (basically a theme-less version of
 ## `make circle`
 
 Runs an equivalent pass of CircleCI locally.
+
+## `make pest` and `make pest-all`
+
+[PEST](https://github.com/okeuday/pest#usage) - Primitive Erlang Security Tool
+
+Runs the security checks against changed (or all project) files and reports potential security threats. Not included in CI as most of the reports are speculative and probably not actionable (yet anyway)
 
 ## Spell checking
 

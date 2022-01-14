@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc Notify-type requests, like MWI updates, received and processed here
 %%% @author Karl Anderson
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_fs_notify).
@@ -84,7 +89,7 @@ start_link(Node, Options) ->
 -spec maybe_presence_probe(kz_json:object(), kz_term:proplist()) -> 'ok'.
 maybe_presence_probe(JObj, _Props) ->
     'true' = kapi_presence:probe_v(JObj),
-    _ = kz_util:put_callid(JObj),
+    _ = kz_log:put_callid(JObj),
     Username = kz_json:get_value(<<"Username">>, JObj),
     Realm = kz_json:get_value(<<"Realm">>, JObj),
     presence_probe(Username, Realm).
@@ -103,17 +108,22 @@ resp_to_probe(State, User, Realm) ->
     PresenceId = <<User/binary, "@", Realm/binary>>,
     PresenceUpdate = [{<<"Presence-ID">>, PresenceId}
                      ,{<<"From">>, <<"sip:", PresenceId/binary>>}
+                     ,{<<"From-User">>, User}
+                     ,{<<"From-Realm">>, Realm}
                      ,{<<"To">>, <<"sip:", PresenceId/binary>>}
+                     ,{<<"To-User">>, User}
+                     ,{<<"To-Realm">>, Realm}
                      ,{<<"State">>, State}
                      ,{<<"Call-ID">>, kz_term:to_hex_binary(crypto:hash(md5, PresenceId))}
                       | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
                      ],
-    kz_amqp_worker:cast(PresenceUpdate, fun kapi_presence:publish_update/1).
+    lager:debug("sending probe reply '~s' for ~s", [State, PresenceId]),
+    kapi_presence:publish_update(PresenceUpdate).
 
 -spec notify_api(kz_json:object(), kz_term:proplist()) -> 'ok'.
 notify_api(JObj, _Props) ->
     'true' = kapi_switch:notify_v(JObj),
-    kz_util:put_callid(JObj),
+    kz_log:put_callid(JObj),
     maybe_send_notify(kapi_switch:notify_username(JObj)
                      ,kapi_switch:notify_realm(JObj)
                      ,JObj
@@ -164,7 +174,7 @@ send_notify(Node, Username, Realm, JObj, Contact) ->
 
 -spec mwi_update(kz_json:object(), kz_term:proplist()) -> no_return().
 mwi_update(JObj, Props) ->
-    _ = kz_util:put_callid(JObj),
+    _ = kz_log:put_callid(JObj),
     'true' = kapi_presence:mwi_unsolicited_update_v(JObj),
     [Username, Realm] = binary:split(kz_json:get_value(<<"To">>, JObj), <<"@">>),
     case ecallmgr_registrar:lookup_registration(Realm, Username) of
@@ -279,7 +289,7 @@ ensure_contact_user(OriginalContact, Username, Realm) ->
 -spec init([atom() | kz_term:proplist()]) -> {'ok', state()}.
 init([Node, Options]) ->
     process_flag('trap_exit', 'true'),
-    kz_util:put_callid(Node),
+    kz_log:put_callid(Node),
     lager:debug("starting new ecallmgr notify process"),
     gproc:reg({'p', 'l', 'fs_notify'}),
     {'ok', #state{node=Node, options=Options}}.

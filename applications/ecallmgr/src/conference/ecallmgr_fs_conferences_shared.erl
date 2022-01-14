@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_fs_conferences_shared).
@@ -67,7 +71,7 @@ start_link() ->
 %%------------------------------------------------------------------------------
 -spec init([]) -> {'ok', state()}.
 init([]) ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
     {'ok', 'ok'}.
 
 %%------------------------------------------------------------------------------
@@ -145,9 +149,9 @@ exec_dial(ConferenceNode, ConferenceId, JObj) ->
 exec_dial(ConferenceNode, ConferenceId, JObj, Endpoints) ->
     lager:info("conference ~s is running on ~s, dialing out", [ConferenceId, ConferenceNode]),
     Pid = self(),
-    Pids = [kz_util:spawn(fun() ->
-                                  exec_endpoint(Pid, ConferenceNode, ConferenceId, JObj, Endpoint)
-                          end) || Endpoint <- Endpoints],
+    Pids = [kz_process:spawn(fun() ->
+                                     exec_endpoint(Pid, ConferenceNode, ConferenceId, JObj, Endpoint)
+                             end) || Endpoint <- Endpoints],
     Num = length(Pids),
     handle_responses(JObj, Num, []).
 
@@ -332,7 +336,7 @@ find_media_server_from_statuses(TargetCallId, IssuerNode, [Status|Statuses]) ->
     end.
 
 -spec query_cluster_for_call(kz_term:ne_binary()) -> {'ok', kz_json:objects()} |
-                                                     {'error', any()}.
+          {'error', any()}.
 query_cluster_for_call(CallId) ->
     Req = [{<<"Call-ID">>, CallId}
           ,{<<"Fields">>, <<"all">>}

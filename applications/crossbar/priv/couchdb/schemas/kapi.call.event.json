@@ -18,6 +18,9 @@
         "Billing-Seconds": {
             "type": "string"
         },
+        "Bridge-B-Unique-ID": {
+            "type": "string"
+        },
         "Bridge-Hangup-Cause": {
             "type": "string"
         },
@@ -34,6 +37,9 @@
             "type": "string"
         },
         "Callee-ID-Number": {
+            "type": "string"
+        },
+        "Caller-Destination-Number": {
             "type": "string"
         },
         "Caller-ID-Name": {

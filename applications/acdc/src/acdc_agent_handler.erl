@@ -1,8 +1,13 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc Handlers for various call events, acdc events, etc
 %%% @author James Aimonetti
 %%% @author Daniel Finke
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(acdc_agent_handler).
@@ -28,7 +33,7 @@
 
 -spec handle_status_update(kz_json:object(), kz_term:proplist()) -> 'ok'.
 handle_status_update(JObj, _Props) ->
-    _ = kz_util:put_callid(JObj),
+    _ = kz_log:put_callid(JObj),
     AccountId = kz_json:get_value(<<"Account-ID">>, JObj),
     AgentId = kz_json:get_value(<<"Agent-ID">>, JObj),
 
@@ -126,14 +131,14 @@ login_resp(JObj, Status) ->
     end.
 
 -spec maybe_start_agent(kz_term:api_binary(), kz_term:api_binary()) ->
-                               {'ok', pid()} |
-                               {'exists', pid()} |
-                               {'error', any()}.
+          {'ok', pid()} |
+          {'exists', pid()} |
+          {'error', any()}.
 maybe_start_agent(AccountId, AgentId) ->
     case acdc_agents_sup:find_agent_supervisor(AccountId, AgentId) of
         'undefined' ->
             lager:debug("agent ~s (~s) not found, starting", [AgentId, AccountId]),
-            case kz_datamgr:open_doc(kz_util:format_account_id(AccountId, 'encoded'), AgentId) of
+            case kz_datamgr:open_doc(kzs_util:format_account_db(AccountId), AgentId) of
                 {'ok', AgentJObj} -> acdc_agents_sup:new(AgentJObj);
                 {'error', _E}=E ->
                     lager:debug("error opening agent doc: ~p", [_E]),
@@ -204,7 +209,7 @@ handle_sync_resp(JObj, Props) ->
 
 -spec handle_call_event(kz_json:object(), kz_term:proplist()) -> 'ok'.
 handle_call_event(JObj, Props) ->
-    _ = kz_util:put_callid(JObj),
+    _ = kz_log:put_callid(JObj),
     FSM = props:get_value('fsm_pid', Props),
     case kapi_call:event_v(JObj) of
         'true' ->
@@ -237,7 +242,7 @@ handle_call_event(Category, Name, FSM, JObj, _) ->
 -spec handle_new_channel(kz_json:object(), kz_term:ne_binary()) -> 'ok'.
 handle_new_channel(JObj, AccountId) ->
     'true' = kapi_call:event_v(JObj),
-    _ = kz_util:put_callid(JObj),
+    _ = kz_log:put_callid(JObj),
     handle_new_channel_acct(JObj, AccountId).
 
 -spec handle_new_channel_acct(kz_json:object(), kz_term:api_binary()) -> 'ok'.
@@ -366,6 +371,11 @@ handle_change(JObj, <<"undefined">>) ->
     end.
 
 handle_device_change(AccountDb, AccountId, DeviceId, Rev, Type) ->
+    %% Since this event is broadcast to listeners simultaneously, the kz_cache_listener
+    %% may have not flushed the caches needed by this handler yet. Do so manually
+    kz_datamgr:flush_cache_doc(AccountDb, DeviceId),
+    kz_endpoint:flush_local(AccountDb, DeviceId),
+
     handle_device_change(AccountDb, AccountId, DeviceId, Rev, Type, 0).
 
 handle_device_change(_AccountDb, _AccountId, DeviceId, Rev, _Type, Cnt) when Cnt > 3 ->
@@ -431,7 +441,7 @@ handle_presence_probe(JObj, _Props) ->
     Realm = kz_json:get_value(<<"Realm">>, JObj),
     case kapps_util:get_account_by_realm(Realm) of
         {'ok', AcctDb} ->
-            AccountId = kz_util:format_account_id(AcctDb, 'raw'),
+            AccountId = kzs_util:format_account_id(AcctDb),
             maybe_respond_to_presence_probe(JObj, AccountId);
         _ -> lager:debug("ignoring presence probe from realm ~s", [Realm])
     end.

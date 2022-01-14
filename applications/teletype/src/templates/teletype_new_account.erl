@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2015-2019, 2600Hz
+%%% @copyright (C) 2015-2020, 2600Hz
 %%% @doc
 %%% @author Peter Defebvre
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(teletype_new_account).
@@ -58,7 +63,7 @@ reply_to() -> teletype_util:default_reply_to().
 
 -spec init() -> 'ok'.
 init() ->
-    kz_util:put_callid(?MODULE),
+    kz_log:put_callid(?MODULE),
     teletype_templates:init(?MODULE),
     teletype_bindings:bind(id(), ?MODULE, 'handle_req').
 
@@ -129,16 +134,15 @@ macros(DataJObj) ->
 admin_user_properties(DataJObj) ->
     AccountId = kz_json:get_value(<<"account_id">>, DataJObj),
     case kzd_accounts:fetch(AccountId) of
-        {'ok', JObj} -> account_admin_user_properties(JObj);
+        {'ok', _AccountDoc} -> account_admin_user_properties(AccountId);
         {'error', _} -> []
     end.
 
--spec account_admin_user_properties(kz_json:object()) -> kz_term:proplist().
-account_admin_user_properties(AccountJObj) ->
-    AccountDb = kz_doc:account_db(AccountJObj),
-    case kz_datamgr:get_results(AccountDb, <<"users/crossbar_listing">>, ['include_docs']) of
+-spec account_admin_user_properties(kz_term:ne_binary()) -> kz_term:proplist().
+account_admin_user_properties(AccountId) ->
+    case kz_datamgr:get_results(AccountId, <<"users/crossbar_listing">>, ['include_docs']) of
         {'error', _E} ->
-            ?LOG_DEBUG("failed to get user listing from ~s: ~p", [AccountDb, _E]),
+            ?LOG_DEBUG("failed to get user listing from ~s: ~p", [AccountId, _E]),
             [];
         {'ok', Users} ->
             find_admin(Users)

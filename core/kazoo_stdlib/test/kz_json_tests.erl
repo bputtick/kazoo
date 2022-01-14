@@ -1,8 +1,13 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2018, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc proplists-like interface to json objects
 %%% @author Karl Anderson
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_json_tests).
@@ -260,6 +265,26 @@ prop_merge_left() ->
             end
            ).
 
+prop_merge_right_recursive() ->
+    Options = #{'keep_null' => 'false'
+               ,'recursive' => 'true'
+               },
+    ?FORALL({LeftJObj, RightJObj}
+           ,{resize(?MAX_OBJECT_DEPTH, kz_json_generators:deep_object())
+            ,resize(?MAX_OBJECT_DEPTH, kz_json_generators:deep_object())
+            }
+           ,begin
+                MergedJObj = kz_json:merge(LeftJObj, RightJObj, Options),
+
+                ?WHENFAIL(?debugFmt("Failed to merge_right recursively (~p, ~p)~nmerge-r/3: ~p~n"
+                                   ,[LeftJObj, RightJObj, MergedJObj]
+                                   )
+                         ,are_all_properties_found(MergedJObj, RightJObj)
+                          andalso are_all_keys_found(MergedJObj, LeftJObj)
+                         )
+            end
+           ).
+
 prop_key_with_null() ->
     ?FORALL({JObj, Path}
            ,{resize(?MAX_OBJECT_DEPTH, kz_json_generators:deep_object())
@@ -372,6 +397,24 @@ is_property_found(Key, Value, Merged) ->
             log_failure(Key, Value, Missing),
             'false'
     end.
+
+%%------------------------------------------------------------------------------
+%% @doc Ensures that all keys (recursively) from `Favored' are found in
+%% `Merged'. Values need not be the same.
+%% @end
+%%------------------------------------------------------------------------------
+are_all_keys_found(Merged, Favored) ->
+    kz_json:all(fun({K, V}) -> is_key_found(K, V, Merged) end, Favored).
+
+is_key_found(Key, ?JSON_WRAPPER(_)=Value, Merged) ->
+    case kz_json:get_value(Key, Merged) of
+        ?JSON_WRAPPER(_)=MergedV -> are_all_keys_found(MergedV, Value);
+        Missing ->
+            log_failure(Key, Value, Missing),
+            'false'
+    end;
+is_key_found(Key, _, Merged) ->
+    kz_json:is_defined(Key, Merged).
 
 log_failure(Key, Value, Missing) ->
     ?debugFmt("failed to find ~p~nexpected: ~p~nfound: ~p~n", [Key, Value, Missing]).
@@ -874,11 +917,12 @@ is_valid_json_object_test_() ->
 
 %% delete results
 -define(D1_AFTER_K1, ?JSON_WRAPPER([{<<"d1k2">>, <<"d1v2">>}, {<<"d1k3">>, [<<"d1v3.1">>, <<"d1v3.2">>, <<"d1v3.3">>]}])).
--define(D1_AFTER_K3_V2, ?JSON_WRAPPER([{<<"d1k3">>, [<<"d1v3.1">>, <<"d1v3.3">>]}, {<<"d1k1">>, <<"d1v1">>}, {<<"d1k2">>, <<"d1v2">>}])).
+-define(D1_AFTER_K3_V2, ?JSON_WRAPPER([{<<"d1k1">>, <<"d1v1">>}, {<<"d1k2">>, <<"d1v2">>}, {<<"d1k3">>, [<<"d1v3.1">>, <<"d1v3.3">>]}])).
+-define(D1_AFTER_K3_V2_PRUNE, ?JSON_WRAPPER([{<<"d1k3">>, [<<"d1v3.1">>, <<"d1v3.3">>]}, {<<"d1k1">>, <<"d1v1">>}, {<<"d1k2">>, <<"d1v2">>}])).
 
--define(D6_AFTER_SUB, ?JSON_WRAPPER([{<<"sub_d1">>, ?EMPTY_JSON_OBJECT}
-                                    ,{<<"d2k1">>, 1}
+-define(D6_AFTER_SUB, ?JSON_WRAPPER([{<<"d2k1">>, 1}
                                     ,{<<"d2k2">>, 3.14}
+                                    ,{<<"sub_d1">>, ?EMPTY_JSON_OBJECT}
                                     ]
                                    )).
 -define(D6_AFTER_SUB_PRUNE, ?JSON_WRAPPER([{<<"d2k1">>, 1}
@@ -941,7 +985,7 @@ delete_key_test_() ->
     ,?_assertEqual(?D1_AFTER_K1, kz_json:delete_key([<<"d1k1">>], ?D1))
     ,?_assertEqual(?D1_AFTER_K1, kz_json:delete_key([<<"d1k1">>], ?D1, 'prune'))
     ,?_assertEqual(?D1_AFTER_K3_V2, kz_json:delete_key([<<"d1k3">>, 2], ?D1))
-    ,?_assertEqual(?D1_AFTER_K3_V2, kz_json:delete_key([<<"d1k3">>, 2], ?D1, 'prune'))
+    ,?_assertEqual(?D1_AFTER_K3_V2_PRUNE, kz_json:delete_key([<<"d1k3">>, 2], ?D1, 'prune'))
     ,?_assertEqual(?D6_AFTER_SUB, kz_json:delete_key([<<"sub_d1">>, <<"d1k1">>], ?D6))
     ,?_assertEqual(?D6_AFTER_SUB_PRUNE, kz_json:delete_key([<<"sub_d1">>, <<"d1k1">>], ?D6, 'prune'))
     ,?_assertEqual(?P_ARR, kz_json:delete_key([<<"k1">>, 1], ?D_ARR))
@@ -1107,8 +1151,8 @@ are_all_there(Values, Keys, Vs, Ks) ->
 
 codec_test_() ->
     [?_assertEqual(?CODEC_JOBJ, kz_json:decode(kz_json:encode(?CODEC_JOBJ)))
-    ,?_assertThrow({error,{invalid_ejson,undefined}}, kz_json:encode(undefined))
-    ,?_assertThrow({error,{invalid_ejson,undefined}}, kz_json:encode(?JSON_WRAPPER(?PROPS_WITH_UNDEFINED)))
+    ,?_assertException(error,{invalid_ejson,undefined}, kz_json:encode(undefined))
+    ,?_assertException(error,{invalid_ejson,undefined}, kz_json:encode(?JSON_WRAPPER(?PROPS_WITH_UNDEFINED)))
     ,?_assert(kz_json:are_equal(kz_json:from_list(?PROPS_WITH_UNDEFINED)
                                ,kz_json:decode(kz_json:encode(kz_json:from_list(?PROPS_WITH_UNDEFINED)))
                                ))
@@ -1286,12 +1330,34 @@ flatten_expand_diff_test_() ->
     X = kz_json:set_value([<<"k10">>, <<"k11">>, <<"k12">>], <<"v10">>, kz_json:new()),
     X2 = kz_json:set_values(Add, X),
 
+    A1 = kz_json:set_value([<<"a">>, <<"b">>]
+                          ,[kz_json:from_list([{<<"c1">>, 1}, {<<"c2">>, 2}])]
+                          ,kz_json:new()),
+    A2 = kz_json:set_value([<<"a">>, <<"b">>]
+                          ,[kz_json:from_list([{<<"c1">>, 1}, {<<"c2">>, 2}, {<<"c3">>, 3}])]
+                          ,kz_json:new()),
+    FLATTEN_LEGACY = kz_json:from_list([{[<<"a">>,<<"b">>],[kz_json:from_list([{<<"c1">>,1},{<<"c2">>,2}])]}]),
+    FLATTEN_DEEP = kz_json:from_list([{[<<"a">>,<<"b">>,1,<<"c1">>],1}
+                                     ,{[<<"a">>,<<"b">>,1,<<"c2">>],2}
+                                     ]),
+
+    DIFF_LEGACY_VALUE = kz_json:from_list([{<<"c1">>,1}, {<<"c2">>,2}, {<<"c3">>,3}]),
+    DIFF_LEGACY = kz_json:set_value([<<"a">>, <<"b">>], [DIFF_LEGACY_VALUE], kz_json:new()),
+    DIFF_DEEP_VALUE = kz_json:from_list([{<<"c3">>, 3}]),
+    DIFF_DEEP = kz_json:set_value([<<"a">>, <<"b">>], [DIFF_DEEP_VALUE], kz_json:new()),
+
     Delta = kz_json:from_list(Add),
     Empty = kz_json:new(),
 
     [?_assertEqual(X2, kz_json:expand(kz_json:flatten(X2)))
     ,?_assertEqual(Delta, kz_json:diff(X2, X))
     ,?_assertEqual(Empty, kz_json:diff(X, X2))
+    ,?_assertEqual(FLATTEN_LEGACY, kz_json:flatten(A1))
+    ,?_assertEqual(FLATTEN_DEEP, kz_json:flatten_deep(A1))
+    ,?_assertEqual(A1, kz_json:expand(kz_json:flatten(A1)))
+    ,?_assertEqual(A1, kz_json:expand_deep(kz_json:flatten_deep(A1)))
+    ,?_assertEqual(DIFF_LEGACY, kz_json:diff(A2, A1))
+    ,?_assertEqual(DIFF_DEEP, kz_json:diff_deep(A2, A1))
     ].
 
 diff_test_() ->
@@ -1409,7 +1475,7 @@ from_map_test_() ->
      ,?_assertEqual(?FROM_MAP_JSON_4_RIGHT, kz_json:from_map(?FROM_MAP_MAP_4))
      }
     ,{"error encoding the invalid json generated in from_map with a mixed proplist inside map"
-     ,?_assertException(throw, {error,{invalid_ejson,{opt1,<<"my-opt1">>}}}, kz_json:encode(?FROM_MAP_JSON_4_WRONG))
+     ,?_assertException(error, {invalid_ejson,{opt1,<<"my-opt1">>}}, kz_json:encode(?FROM_MAP_JSON_4_WRONG))
      }
     ,{"encoding the invalid json generated in from_map with a mixed proplist inside map"
      ,?_assertEqual(kz_json:encode(?FROM_MAP_JSON_4_RIGHT), kz_json:encode(kz_json:from_map(?FROM_MAP_MAP_4)))
@@ -1450,12 +1516,10 @@ utf8_binary_values_test_() ->
      ,?_assertEqual(UTF8Recursive, kz_json:from_list_recursive(Recursive))
      }
     ,{"When encoding a NOT utf8 ready object it should fail"
-     ,?_assertException(throw, {error,{invalid_string,V}},
-                        kz_json:encode(?JSON_WRAPPER(Props)))
+     ,?_assertException(error, {invalid_string,V}, kz_json:encode(?JSON_WRAPPER(Props)))
      }
     ,{"When encoding a NOT utf8 ready object it should fail"
-     ,?_assertException(throw, {error,{invalid_string,V}},
-                        kz_json:encode(?JSON_WRAPPER([{K, ?JSON_WRAPPER(Props)}])))
+     ,?_assertException(error, {invalid_string,V}, kz_json:encode(?JSON_WRAPPER([{K, ?JSON_WRAPPER(Props)}])))
      }
     ,{"When encoding a utf8 ready object it should work"
      ,?_assertEqual(UTF8EncJObj, kz_json:encode(UTF8JObj))

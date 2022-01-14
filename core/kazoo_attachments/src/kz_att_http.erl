@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2016-2019, 2600Hz
+%%% @copyright (C) 2016-2020, 2600Hz
 %%% @doc Simple URL Storage for attachments.
 %%% @author Luis Azedo
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_att_http).
@@ -44,7 +49,7 @@ put_attachment(Settings, DbName, DocId, AName, Contents, Options) ->
     DefaultContentType = props:get_value('content_type', Options, kz_mime:from_filename(AName)),
 
     {ContentType, Body} = build_req_body(Settings, DbName, DocId, AName, Contents, DefaultContentType),
-    Headers = [{'content_type', ContentType}],
+    Headers = [{"content-type", ContentType}],
 
     case send_request(Url, format_verb(Verb), Headers, Body) of
         {'ok', NewUrl, _Body, _Debug} ->
@@ -114,15 +119,41 @@ fields(_Settings) -> kz_att_util:default_format_url_fields().
                       ,gen_attachment:att_name()
                       ) -> gen_attachment:fetch_response().
 fetch_attachment(HandlerProps, DbName, DocId, AName) ->
+    BaseUrlParam = kz_json:get_ne_binary_value(<<"url">>, HandlerProps),
+    HProps = handler_props_map(HandlerProps),
+
     Routines = kz_att_error:fetch_routines(HandlerProps, DbName, DocId, AName),
-    case kz_json:get_value(<<"url">>, HandlerProps) of
-        'undefined' -> kz_att_error:new('invalid_data', Routines);
-        Url ->
-            handle_fetch_attachment_resp(fetch_attachment(Url), Routines)
+
+    BaseUrl = kz_binary:strip_right(BaseUrlParam, $/),
+    ClientSegment = kz_att_util:format_url(HProps, {DbName, DocId, AName}, fields(HProps)),
+    Separator = base_separator(BaseUrl),
+
+    URL = list_to_binary([BaseUrl, Separator, ClientSegment]),
+
+    {'ok', Doc} = kz_datamgr:open_cache_doc(DbName, DocId),
+    Metadata = kz_json:get_json_value(<<"metadata">>, Doc, kz_doc:public_fields(Doc)),
+    QS = kz_http_util:json_to_querystring(Metadata),
+
+    FetchURL = join_url_and_querystring(URL, QS),
+
+    handle_fetch_attachment_resp(fetch_attachment(FetchURL), Routines).
+
+-spec handler_props_map(gen_attachment:handler_props()) -> gen_attachment:settings().
+handler_props_map(HandlerProps) ->
+    case kz_json:get_value(<<"handler_props">>, HandlerProps) of
+        HP when is_map(HP) -> HP;
+        _ -> #{}
     end.
 
+join_url_and_querystring(<<URL/binary>>, QS) ->
+    join_url_and_querystring(kz_http_util:urlsplit(URL), QS);
+join_url_and_querystring({Scheme, Location, Path, <<>>, Frag}, QS) ->
+    kz_http_util:urlunsplit({Scheme, Location, Path, QS, Frag});
+join_url_and_querystring({Scheme, Location, Path, QueryString, Frag}, QS) ->
+    kz_http_util:urlunsplit({Scheme, Location, Path, kz_binary:join([QueryString, QS], <<"&">>), Frag}).
+
 -spec handle_fetch_attachment_resp(gen_attachment:fetch_response(), kz_att_error:update_routines()) ->
-                                          gen_attachment:fetch_response().
+          gen_attachment:fetch_response().
 handle_fetch_attachment_resp({'error', Url, Resp}, Routines) ->
     handle_http_error_response(Resp, [{fun kz_att_error:set_req_url/2, Url} | Routines]);
 handle_fetch_attachment_resp({'ok', Body}, _Routines) ->
@@ -202,14 +233,14 @@ maybe_add_settings(#{'base64_encode_data' := 'true'}) ->
 maybe_add_settings(_Settings) -> [].
 
 -spec fetch_attachment(kz_term:ne_binary()) ->
-                              gen_attachment:fetch_response() |
-                              {'error', kz_term:ne_binary(), atom() | kz_http:ret()}.
+          gen_attachment:fetch_response() |
+          {'error', kz_term:ne_binary(), atom() | kz_http:ret()}.
 fetch_attachment(URL) ->
     fetch_attachment(URL, 0, kz_json:new()).
 
 -spec fetch_attachment(kz_term:ne_binary(), integer(), kz_json:object()) ->
-                              gen_attachment:fetch_response() |
-                              {'error', kz_term:ne_binary(), atom() | kz_http:ret()}.
+          gen_attachment:fetch_response() |
+          {'error', kz_term:ne_binary(), atom() | kz_http:ret()}.
 fetch_attachment(Url, Redirects, _)
   when Redirects > ?MAX_REDIRECTS ->
     {'error', Url, 'too_many_redirects'};

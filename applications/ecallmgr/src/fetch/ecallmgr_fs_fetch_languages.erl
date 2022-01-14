@@ -1,9 +1,14 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc Send config commands to FS
 %%%
 %%% @author Edouard Swiac
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_fs_fetch_languages).
@@ -36,7 +41,7 @@ init() ->
 
 -spec language_req(map()) -> fs_sendmsg_ret().
 language_req(#{fetch_id := Id, payload := JObj} = Ctx) ->
-    kz_util:put_callid(Id),
+    kz_log:put_callid(Id),
     {ok, Xml} = language_resp_xml(JObj),
     freeswitch:fetch_reply(Ctx#{reply => iolist_to_binary(Xml)}).
 

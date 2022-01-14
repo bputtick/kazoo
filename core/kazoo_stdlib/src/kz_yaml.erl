@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_yaml).
@@ -235,7 +239,7 @@ maybe_sort_keys(_, Map) ->
     maps:to_list(Map).
 
 -spec encode_block_mapping_fold(state(), yaml_node(), yaml_node(), {non_neg_integer(), iolist()}, non_neg_integer()) ->
-                                       {non_neg_integer(), iolist()}.
+          {non_neg_integer(), iolist()}.
 encode_block_mapping_fold(State, Key, Value, {Index, Acc}, Level) ->
     NewState = new_state(State),
     #{explicit := Explicit
@@ -285,7 +289,7 @@ encode_block_sequence(State, Seqs, Level) ->
           }.
 
 -spec encode_block_seq_fold(state(), yaml_node(), {non_neg_integer(), iolist()}, non_neg_integer()) ->
-                                   {non_neg_integer(), iolist()}.
+          {non_neg_integer(), iolist()}.
 encode_block_seq_fold(State, Seq, {Index, Acc}, Level) ->
     ValueState = encode_node(new_state(State), Seq, Level + 1),
     {Index + 1, [ seq_value(ValueState, Index, Level) | Acc]}.
@@ -545,7 +549,7 @@ fold_line(Line, Width) ->
     end.
 
 -spec fold_line_fold(binary(), non_neg_integer(), 'nomatch' | list() | {'match', list()}, non_neg_integer(), non_neg_integer(), binary()) ->
-                            {non_neg_integer(), non_neg_integer(), binary()}.
+          {non_neg_integer(), non_neg_integer(), binary()}.
 fold_line_fold(_, _, 'nomatch', Start, Curr, Acc) ->
     {Start, Curr, Acc};
 fold_line_fold(Line, Width, {'match', Matches}, Start, Curr, Acc) ->

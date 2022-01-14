@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_fs_event_stream_sup).
@@ -12,7 +16,7 @@
 -export([start_link/2]).
 -export([init/1]).
 
--define(PACKET_SIZE, kapps_config:get_integer(?APP_NAME, <<"tcp_packet_type">>, 4)).
+-define(PACKET_SIZE, kapps_config:get_integer(?APP_NAME, <<"tcp_packet_type">>, 2)).
 
 -define(CHILDREN(PacketSize), [event_child(Node, Event, PacketSize) || Event <- ?FS_EVENTS]).
 
@@ -58,6 +62,6 @@ init([Node, _Props]) ->
     {'ok', {SupFlags, ?CHILDREN(PacketSize)}}.
 
 -spec event_child(atom(), ecallmgr_fs_event_stream:profile(), ecallmgr_fs_event_stream:event_packet_type()) ->
-                         kz_types:sup_child_spec().
+          kz_types:sup_child_spec().
 event_child(Node, Event, Packet) ->
     ?WORKER_NAME_ARGS_TYPE(Event, 'ecallmgr_fs_event_stream', [Node, Event, Packet], 'transient').

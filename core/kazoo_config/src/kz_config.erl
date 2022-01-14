@@ -1,7 +1,11 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2013-2019, 2600Hz
+%%% @copyright (C) 2013-2020, 2600Hz
 %%% @doc
 %%% @author Peter Defebvre
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_config).
@@ -226,7 +230,7 @@ format_sections([Section | T], ZoneFilter, Acc) ->
     end.
 
 -spec format_zone_section(kz_term:proplist(), kz_term:proplist(), section_key(), kz_term:proplist()) ->
-                                 kz_term:proplist().
+          kz_term:proplist().
 format_zone_section(Section, Sections, ZoneFilter, Acc) ->
     case props:get_value(ZoneFilter, Section, <<"generic">>) of
         <<"generic">> ->
@@ -256,7 +260,7 @@ local_sections([Section | T], Acc) ->
 -type section_type() :: {kz_term:ne_binary() | {kz_term:ne_binary(), atom()}, kz_term:proplist()}.
 
 -spec add_section(kz_term:ne_binary(), section_type(), kz_term:proplist()) ->
-                         kz_term:proplist().
+          kz_term:proplist().
 add_section(Group, Value, Props) ->
     props:set_value(Group, [Value | props:get_value(Group, Props, [])], Props).
 

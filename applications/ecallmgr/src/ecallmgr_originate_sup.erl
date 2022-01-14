@@ -1,13 +1,18 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc Simple-One-For-One strategy for restarting call event processes
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_originate_sup).
 -behaviour(supervisor).
 
 -export([start_link/0]).
--export([start_originate_proc/3]).
+-export([start_originate_proc/2]).
 -export([init/1]).
 
 -include("ecallmgr.hrl").
@@ -28,9 +33,9 @@
 start_link() ->
     supervisor:start_link({'local', ?SERVER}, ?MODULE, []).
 
--spec start_originate_proc(atom(), kz_json:object(), map()) -> kz_types:sup_startchild_ret().
-start_originate_proc(Node, JObj, Context) ->
-    supervisor:start_child(?SERVER, [Node, JObj, Context]).
+-spec start_originate_proc(atom(), kz_json:object()) -> kz_types:sup_startchild_ret().
+start_originate_proc(Node, JObj) ->
+    supervisor:start_child(?SERVER, [Node, JObj]).
 
 %%%=============================================================================
 %%% Supervisor callbacks

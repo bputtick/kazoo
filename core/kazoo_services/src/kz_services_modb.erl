@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_services_modb).
@@ -18,8 +22,8 @@
 %%------------------------------------------------------------------------------
 -spec rollover(kz_term:ne_binary(), kz_time:year(), kz_time:month()) -> 'ok'.
 rollover(AccountId, Year, Month) ->
-    AccountMODb = kz_util:format_account_mod_id(AccountId, Year, Month),
-    lager:debug("creating snapshot for account ~s services in month ~s-~s"
+    AccountMODb = kzs_util:format_account_mod_id(AccountId, Year, Month),
+    lager:debug("creating snapshot for account ~s services in month ~p-~p"
                ,[AccountId, Year, Month]
                ),
     FetchOptions = ['hydrate_account_quantities'
@@ -60,7 +64,7 @@ save_services_to_modb(AccountMODb, ServicesJObj, Id) ->
 -spec maybe_save_to_previous_modb(kz_term:ne_binary(), kz_json:object()) -> 'ok'.
 maybe_save_to_previous_modb(NewMODb, ServicesJObj) ->
     PrevMODb = kazoo_modb_util:prev_year_month_mod(NewMODb),
-    AccountDb = kz_util:format_account_modb(PrevMODb, 'encoded'),
+    AccountDb = kzs_util:format_account_modb(PrevMODb, 'encoded'),
     case kz_datamgr:db_exists(AccountDb) of
         'true' -> save_services_to_modb(PrevMODb, ServicesJObj, ?SERVICES_EOM);
         'false' -> 'ok'
@@ -76,6 +80,6 @@ update_pvts(AccountMODb, ServicesJObj) ->
     kz_doc:update_pvt_parameters(WithoutRev
                                 ,AccountMODb
                                 ,[{'account_db', AccountMODb}
-                                 ,{'account_id', kz_util:format_account_id(AccountMODb)}
+                                 ,{'account_id', kzs_util:format_account_id(AccountMODb)}
                                  ]
                                 ).

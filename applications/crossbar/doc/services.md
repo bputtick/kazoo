@@ -62,6 +62,146 @@ curl -v -X GET \
     http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/services/audit/{AUDIT_ID}
 ```
 
+## Get service changes summary per day
+
+Using this API you can a list of services changes (additions/removal/usage) summary per day.
+
+> GET /v2/accounts/{ACCOUNT_ID}/services/audit/summary
+
+```shell
+curl -v -X GET \
+    -H "X-Auth-Token: {AUTH_TOKEN}" \
+    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/services/audit/summary
+```
+
+### Example
+
+**Request:**
+
+
+```shell
+curl -v -X GET \
+    -H "X-Auth-Token: {AUTH_TOKEN}" \
+    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/services/audit/summary?created_from=63742805754&created_to=63743140658
+```
+
+**Response:**
+
+```json
+{
+  "data": [
+    {
+      "account": {
+        "2019-12-05": {
+          "addition": 1,
+          "last_timestamp": 63742805754,
+          "quantity": 2,
+          "removal": 0,
+          "sum_quantity": false
+        },
+        "2019-12-09": {
+          "addition": 1,
+          "last_timestamp": 63743140658,
+          "quantity": 2,
+          "removal": 1,
+          "sum_quantity": false
+        }
+      },
+      "mailbox": {
+        "2019-12-09": {
+          "addition": 3,
+          "last_timestamp": 63743140695,
+          "quantity": 3,
+          "removal": 0,
+          "sum_quantity": false
+        }
+      },
+      "softphone": {
+        "2019-12-09": {
+          "addition": 1,
+          "last_timestamp": 63743140580,
+          "quantity": 3,
+          "removal": 0,
+          "sum_quantity": false
+        }
+      },
+      "user": {
+        "2019-12-09": {
+          "addition": 1,
+          "last_timestamp": 63743140695,
+          "quantity": 2,
+          "removal": 0,
+          "sum_quantity": false
+        }
+      }
+    }
+  ],
+  "revision": "{REVISION}",
+  "timestamp": "{TIMESTAMP}",
+  "version": "{VERSION}",
+  "node": "{NODE_HASH}",
+  "request_id": "{REQUEST_ID}",
+  "status": "success",
+  "auth_token": "{AUTH_TOKEN}"
+}
+```
+
+## Get changes summary per day for a single service category
+
+Using this API you can a list of changes (additions/removal/usage) summary per day for a single service category.
+
+> GET /v2/accounts/{ACCOUNT_ID}/services/audit_summary/{SOURCE_SERVICE}
+
+```shell
+curl -v -X GET \
+    -H "X-Auth-Token: {AUTH_TOKEN}" \
+    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/services/audit/summary/{SOURCE_SERVICE}
+```
+
+### Example
+
+**Request:**
+
+
+```shell
+curl -v -X GET \
+    -H "X-Auth-Token: {AUTH_TOKEN}" \
+    http://{SERVER}:8000/v2/accounts/{ACCOUNT_ID}/services/audit/summary/user?created_from=63742805754&created_to=63743140658
+```
+
+**Response:**
+
+```json
+{
+  "data": [
+    {
+      "2019-12-09": {
+        "addition": 1,
+        "last_timestamp": 63743140658,
+        "quantity": 2,
+        "removal": 1,
+        "sum_quantity": false
+      }
+    },
+    {
+      "2019-12-05": {
+        "addition": 1,
+        "last_timestamp": 63742805754,
+        "quantity": 2,
+        "removal": 0,
+        "sum_quantity": false
+      }
+    }
+  ],
+  "revision": "{REVISION}",
+  "timestamp": "{TIMESTAMP}",
+  "version": "{VERSION}",
+  "node": "{NODE_HASH}",
+  "request_id": "{REQUEST_ID}",
+  "status": "success",
+  "auth_token": "{AUTH_TOKEN}"
+}
+```
 
 ## Change
 

@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_services_standing).
@@ -196,7 +200,7 @@ handle_bookkeeper_results([{_Invoice, _Error}|_]) ->
 %%------------------------------------------------------------------------------
 -type invoices_acc() :: [{kz_json:object(), kz_amqp_worker:request_return()}].
 -spec invoices_foldl_fun(kz_services:services(), acceptable_options()) ->
-                                fun((kz_json:object(), invoices_acc()) -> invoices_acc()).
+          fun((kz_json:object(), invoices_acc()) -> invoices_acc()).
 invoices_foldl_fun(Services, Options) ->
     fun(Invoice, Results) ->
             Type = kz_services_invoice:bookkeeper_type(Invoice),
@@ -211,7 +215,7 @@ invoices_foldl_fun(Services, Options) ->
     end.
 
 -spec check_bookkeeper(kz_services_invoice:invoice(), kz_services:services(), acceptable_options()) ->
-                              kz_amqp_worker:request_return().
+          kz_amqp_worker:request_return().
 check_bookkeeper(Invoice, Services, #{amount := Amount}) ->
     Request = [{<<"Account-ID">>, kz_services:account_id(Services)}
               ,{<<"Bookkeeper-ID">>, kz_services_invoice:bookkeeper_id(Invoice)}
@@ -223,7 +227,7 @@ check_bookkeeper(Invoice, Services, #{amount := Amount}) ->
                  )
                }
               ,{<<"Estimated-Withdrawal">>, Amount}
-              ,{<<"Call-ID">>, kz_util:get_callid()}
+              ,{<<"Call-ID">>, kz_log:get_callid()}
                | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
               ],
     kz_amqp_worker:call(Request

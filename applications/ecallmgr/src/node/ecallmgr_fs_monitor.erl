@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc When connecting to a FreeSWITCH node, we create this process
 %%% to monitor the node.
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_fs_monitor).
@@ -47,7 +52,7 @@ start_link(Node, Options) ->
 -spec init([atom() | kz_term:proplist()]) -> {'ok', state()}.
 init([Node, Options]) ->
     process_flag('trap_exit', 'true'),
-    kz_util:put_callid(Node),
+    kz_log:put_callid(Node),
     erlang:monitor_node(Node, 'true'),
     {'ok', #{node => Node, options => Options}}.
 

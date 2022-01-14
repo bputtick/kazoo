@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2016-2019, 2600Hz
+%%% @copyright (C) 2016-2020, 2600Hz
 %%% @doc
 %%% @author Pierre Fenoll
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(tasks_maintenance).
@@ -49,8 +54,8 @@ help(Category, Action) ->
 
 -spec add(kz_term:text(), kz_term:text(), kz_term:text(), kz_term:text(), kz_term:text()) -> 'no_return'.
 add(AuthAccount, Account, Category, Action, CSVFile) ->
-    AuthAccountId = kz_util:format_account_id(AuthAccount),
-    AccountId = kz_util:format_account_id(Account),
+    AuthAccountId = kzs_util:format_account_id(AuthAccount),
+    AccountId = kzs_util:format_account_id(Account),
     case file:read_file(CSVFile) of
         {'ok', CSVBin} ->
             case kz_csv:count_rows(CSVBin) of
@@ -65,8 +70,8 @@ add(AuthAccount, Account, Category, Action, CSVFile) ->
 
 -spec add(kz_term:text(), kz_term:text(), kz_term:text(), kz_term:text()) -> 'no_return'.
 add(AuthAccount, Account, Category, Action) ->
-    AuthAccountId = kz_util:format_account_id(AuthAccount),
-    AccountId = kz_util:format_account_id(Account),
+    AuthAccountId = kzs_util:format_account_id(AuthAccount),
+    AccountId = kzs_util:format_account_id(Account),
     case kz_tasks:new(AuthAccountId
                      ,AccountId
                      ,Category
@@ -87,7 +92,7 @@ tasks() ->
 
 -spec tasks(kz_term:text()) -> 'no_return'.
 tasks(Account) ->
-    AccountId = kz_util:format_account_id(Account),
+    AccountId = kzs_util:format_account_id(Account),
     Tasks = kz_tasks:all(AccountId),
     print_json(Tasks).
 
@@ -129,7 +134,8 @@ remove(TaskId) ->
 
 -spec start_cleanup_pass() -> no_return.
 start_cleanup_pass() ->
-    _ = kz_tasks_trigger:browse_dbs_for_triggers(?MODULE),
+    _ = kz_process:spawn(fun kt_compactor:browse_dbs_for_triggers/1, [?MODULE]),
+    io:format("cleanup pass started~n"),
     no_return.
 
 -spec cleanup_soft_deletes(kz_term:text()) -> no_return.
@@ -207,7 +213,7 @@ attachment(TaskId, AName) ->
     end.
 
 -spec new_task(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary(), pos_integer(), kz_term:ne_binary(), kz_term:ne_binary()) ->
-                      'no_return'.
+          'no_return'.
 new_task(AuthAccountId, AccountId, Category, Action, TotalRows, CSVBin, CSVName) ->
     case kz_tasks:new(AuthAccountId, AccountId, Category, Action, TotalRows, CSVBin, CSVName) of
         {'ok', TaskJObj} ->
@@ -233,7 +239,7 @@ handle_new_task_error(JObj, _, _) ->
     print_json(kz_json:from_list([{<<"errors">>, JObj}])).
 
 -spec compaction_history(kz_term:ne_binary(), kz_term:ne_binary()) ->
-                                {'ok', kz_json:json_terms()} | {'error', atom()}.
+          {'ok', kz_json:json_terms()} | {'error', atom()}.
 compaction_history(Year, Month) ->
     kt_compaction_reporter:history(kz_term:to_integer(Year), kz_term:to_integer(Month)).
 
@@ -248,7 +254,7 @@ job_info(JobId) ->
     'no_return'.
 
 -spec maybe_print_compaction_history({'ok', kz_json:json_terms()} | {'error', atom()}) ->
-                                            'no_return'.
+          'no_return'.
 maybe_print_compaction_history({'ok', []}) ->
     io:format("no history found~n"),
     'no_return';
@@ -262,9 +268,9 @@ maybe_print_compaction_history({'ok', JObjs}) ->
              ,"finished_at"
              ,"exec_time"
              ],
-    HLine = "+-----------------------+--------+-----------+---------+------------+---------------------+---------------------+--------------+",
+    HLine = "+------------------------------+--------+-----------+---------+------------+---------------------+---------------------+--------------+",
     %% Format string for printing header and values of the table including "columns".
-    FStr = "| ~.21s | ~6.6s | ~9.9s | ~7.7s | ~10.10s | ~.19s | ~.19s | ~12.12s |~n",
+    FStr = "| ~.28s | ~6.6s | ~9.9s | ~7.7s | ~10.10s | ~.19s | ~.19s | ~12.12s |~n",
     %% Print top line of table, then prints the header and then another line below.
     io:format("~s~n" ++ FStr ++ "~s~n", [HLine] ++ Header ++ [HLine]),
     lists:foreach(fun(Obj) -> print_compaction_history_row(Obj, FStr) end, JObjs),

@@ -1,9 +1,14 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc Send config commands to FS
 %%%
 %%% @author Edouard Swiac
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_fs_fetch_configuration_acl).
@@ -32,8 +37,8 @@ init() ->
 
 -spec acl(map()) -> fs_sendmsg_ret().
 acl(#{node := Node, fetch_id := Id}=Ctx) ->
-    kz_util:put_callid(Id),
-    ACLs = ecallmgr_fs_acls:get(),
+    kz_log:put_callid(Id),
+    ACLs = ecallmgr_fs_acls:media_acls(),
     ConfigXML = generate_acl_xml(ACLs),
     lager:debug_unsafe("sending acl XML to ~s: ~s", [Node, ConfigXML]),
     freeswitch:fetch_reply(Ctx#{reply => ConfigXML}).

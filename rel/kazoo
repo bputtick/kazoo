@@ -178,10 +178,9 @@ relx_nodetool() {
 
 # Run an escript in the node's environment
 relx_escript() {
-    shift; scriptpath="$1"; shift
+    shift; scriptpath="$ROOTDIR/$1"; shift
     export RELEASE_ROOT_DIR
-
-    "$ERTS_DIR/bin/escript" "$ROOTDIR/$scriptpath" $@
+    "$ERTS_DIR/bin/escript" $scriptpath "$@"
 }
 
 # Output a start command for the last argument of run_erl
@@ -434,7 +433,7 @@ case "$1" in
 
     escript)
         ## Run an escript under the node's environment
-        if ! relx_escript $@; then
+        if ! relx_escript "$@"; then
             exit 1
         fi
         ;;
@@ -551,7 +550,8 @@ case "$1" in
             -config "$SYS_CONFIG_FILE" \
             $NAME_ARG \
             -setcookie $COOKIE \
-            -args_file "$VM_ARGS_FILE" 
+            -args_file "$VM_ARGS_FILE" \
+            -proto_dist kz amqp
 
         # Dump environment info for logging purposes
         echo "Exec: $@" -- ${1+$ARGS}

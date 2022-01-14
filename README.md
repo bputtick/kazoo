@@ -1,5 +1,7 @@
 ## Kazoo [![TravisCI build status](https://travis-ci.org/2600hz/kazoo.svg?branch=master)](https://travis-ci.org/2600hz/kazoo) [![CircleCI](https://circleci.com/gh/2600hz/kazoo/tree/master.svg?style=svg)](https://circleci.com/gh/2600hz/kazoo/tree/master) [![2600Hz IRC](https://img.shields.io/badge/irc-%232600hz-orange.svg)](https://webchat.freenode.net/?channels=2600hz) [![Project Stats](https://www.openhub.net/p/KazooPlatform/widgets/project_thin_badge.gif)](https://www.openhub.net/p/KazooPlatform)
 
+**See current announcements for updates on KAZOO master / 5.x work below**
+
 **[Periodically check our announcements for important developer updates!](https://github.com/2600hz/kazoo/tree/master/doc/announcements.md)**
 
 ````
@@ -160,7 +162,7 @@ See the [installation](./doc/installation.md) page to build.
     * [KAZOO developer documentation](https://docs.2600hz.com/dev/)
     * [UI developer documentation](https://docs.2600hz.com/ui/)
     * [System administrator documentation](https://docs.2600hz.com/sysadmin/)
-* Bugs and feature requests can be found [here](http://tickets.2600hz.org)
+* Bugs and feature requests can be found [here](https://tickets.2600hz.org)
 * [Learn you some Erlang!](http://learnyousomeerlang.com/)
 * Check out the [FreeSWITCH documentation](https://freeswitch.org/confluence/display/FREESWITCH/FreeSWITCH+Explained)
 * Take a look at the [Kamailio documentation](https://www.kamailio.org/w/documentation/)

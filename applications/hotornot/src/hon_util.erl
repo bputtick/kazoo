@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(hon_util).
@@ -22,23 +27,23 @@
                                   kz_datamgr:data_error().
 
 -spec candidate_rates(kz_term:ne_binary()) ->
-                             candidate_rates_return().
+          candidate_rates_return().
 candidate_rates(ToDID) ->
     candidate_rates(ToDID, 'undefined', 'undefined').
 
 -spec candidate_rates(kz_term:ne_binary(), kz_term:api_ne_binary()) ->
-                             candidate_rates_return().
+          candidate_rates_return().
 candidate_rates(ToDID, AccountId) ->
     candidate_rates(ToDID, AccountId, 'undefined').
 
 -spec candidate_rates(kz_term:ne_binary(), kz_term:api_ne_binary(), kz_term:api_ne_binary()) ->
-                             candidate_rates_return().
+          candidate_rates_return().
 candidate_rates(ToDID, AccountId, RatedeckId) ->
     E164 = knm_converters:normalize(ToDID),
     find_candidate_rates(E164, AccountId, RatedeckId).
 
 -spec find_candidate_rates(kz_term:ne_binary(), kz_term:api_ne_binary(), kz_term:api_ne_binary()) ->
-                                  candidate_rates_return().
+          candidate_rates_return().
 find_candidate_rates(E164, AccountId, RatedeckId)
   when byte_size(E164) > ?MIN_PREFIX_LEN ->
     case hotornot_config:should_use_trie() of
@@ -50,7 +55,7 @@ find_candidate_rates(DID, _AccountId, _RatedeckId) ->
     {'error', 'did_too_short'}.
 
 -spec find_trie_rates(kz_term:ne_binary(), kz_term:api_ne_binary(), kz_term:api_ne_binary()) ->
-                             candidate_rates_return().
+          candidate_rates_return().
 find_trie_rates(E164, AccountId, RatedeckId) ->
     case hon_trie:match_did(kz_binary:remove_non_numeric(E164), AccountId, RatedeckId) of
         {'ok', Result} -> {'ok', Result};
@@ -72,12 +77,12 @@ maybe_update_trie(_RatedeckId, _Candidates, _Module) ->
     'ok'.
 
 -spec fetch_candidate_rates(kz_term:ne_binary(), kz_term:api_ne_binary(), kz_term:api_ne_binary()) ->
-                                   candidate_rates_return().
+          candidate_rates_return().
 fetch_candidate_rates(E164, AccountId, RatedeckId) ->
     fetch_candidate_rates(E164, AccountId, RatedeckId, kzdb_ratedeck:prefix_keys(E164)).
 
 -spec fetch_candidate_rates(kz_term:ne_binary(), kz_term:api_ne_binary(), kz_term:api_ne_binary(), kz_term:ne_binaries()) ->
-                                   candidate_rates_return().
+          candidate_rates_return().
 fetch_candidate_rates(_E164, _AccountId, _RatedeckId, []) ->
     {'error', 'did_too_short'};
 fetch_candidate_rates(E164, AccountId, RatedeckId, Keys) ->
@@ -97,7 +102,7 @@ fetch_candidate_rates(E164, AccountId, RatedeckId, Keys) ->
     end.
 
 -spec fetch_rates_from_ratedeck(kz_term:ne_binary(), [integer()]) ->
-                                       kz_datamgr:get_results_return().
+          kz_datamgr:get_results_return().
 fetch_rates_from_ratedeck(RatedeckDb, Keys) ->
     kz_datamgr:get_results(RatedeckDb
                           ,<<"rates/lookup">>
@@ -157,7 +162,7 @@ reseller_ratedeck(_AccountId, ResellerId) ->
 -endif.
 
 -spec matching_rates(kzd_rates:docs(), kapi_rate:req()) ->
-                            kzd_rates:docs().
+          kzd_rates:docs().
 matching_rates(Rates, RateReq) ->
     FilterList = hotornot_config:filter_list(),
     lists:foldl(fun(Filter, Acc) ->

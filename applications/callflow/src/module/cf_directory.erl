@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc Present a directory menu to the caller.
 %%%
 %%% <strong>Basic flow of a directory call:</strong>
@@ -53,6 +53,11 @@
 %%% </ol>
 %%%
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(cf_directory).
@@ -108,27 +113,22 @@
 %%------------------------------------------------------------------------------
 -spec handle(kz_json:object(), kapps_call:call()) -> 'ok'.
 handle(Data, Call) ->
-    {'ok', DirJObj} = kz_datamgr:open_cache_doc(kapps_call:account_db(Call)
-                                               ,kz_json:get_ne_binary_value(<<"id">>, Data)
-                                               ),
+    {'ok', DirJObj} = kz_datamgr:open_cache_doc(kapps_call:account_db(Call), kz_doc:id(Data)),
     kapps_call_command:answer(Call),
 
-    case get_directory_listing(kapps_call:account_db(Call)
-                              ,kz_doc:id(DirJObj)
-                              )
-    of
+    case get_directory_listing(kapps_call:account_db(Call), kz_doc:id(DirJObj)) of
         {'ok', Users} ->
-            State = #directory{sort_by = get_sort_by(kz_json:get_value(<<"sort_by">>, DirJObj, <<"last_name">>))
-                              ,search_fields = get_search_fields(kz_json:get_value(<<"search_fields">>, DirJObj, <<"both">>))
-                              ,min_dtmf = kz_json:get_integer_value(<<"min_dtmf">>, DirJObj, 3)
-                              ,max_dtmf = kz_json:get_integer_value(<<"max_dtmf">>, DirJObj, 0)
-                              ,confirm_match = kz_json:is_true(<<"confirm_match">>, DirJObj, 'false')
-                              ,digits_collected = <<>>
-                              ,users = Users
-                              },
-            Users1 = sort_users(Users, State#directory.sort_by),
+            SortBy = get_sort_by(kzd_directories:sort_by(DirJObj, <<"last_name">>)),
+            Users1 = sort_users(Users, SortBy),
             _ = log(Users1),
-            directory_start(Call, State, Users1);
+            State = #directory{search_fields = get_search_fields(kzd_directories:search_fields(DirJObj, <<"both">>))
+                              ,min_dtmf = kzd_directories:min_dtmf(DirJObj, 3)
+                              ,max_dtmf = kzd_directories:max_dtmf(DirJObj, 0)
+                              ,confirm_match = kzd_directories:confirm_match(DirJObj, 'false')
+                              ,digits_collected = <<>>
+                              ,users = Users1
+                              },
+            directory_start(Call, State);
         {'error', 'no_users_in_directory'} ->
             _ = play_no_users_found(Call),
             cf_exe:continue(Call);
@@ -138,12 +138,12 @@ handle(Data, Call) ->
             cf_exe:continue(Call)
     end.
 
--spec directory_start(kapps_call:call(), directory(), directory_users()) -> 'ok'.
-directory_start(Call, State, CurrUsers) ->
-    directory_start(Call, State, CurrUsers, 3).
+-spec directory_start(kapps_call:call(), directory()) -> 'ok'.
+directory_start(Call, State) ->
+    directory_start(Call, State, 3).
 
--spec directory_start(kapps_call:call(), directory(), directory_users(), non_neg_integer()) -> 'ok'.
-directory_start(Call, _State, _CurrUsers, 0) ->
+-spec directory_start(kapps_call:call(), directory(), non_neg_integer()) -> 'ok'.
+directory_start(Call, _State, 0) ->
     lager:error("maximum try to collect digits"),
     _NoopId = kapps_call_command:audio_macro([{'prompt', ?PROMPT_SPECIFY_MINIMUM}
                                              ,{'prompt', ?PROMPT_NO_RESULTS_FOUND}
@@ -151,39 +151,39 @@ directory_start(Call, _State, _CurrUsers, 0) ->
                                             ,Call
                                             ),
     cf_exe:stop(Call);
-directory_start(Call, State, CurrUsers, Loop) ->
+directory_start(Call, State, Loop) ->
     _ = kapps_call_command:flush_dtmf(Call),
     case play_directory_instructions(Call, search_fields(State)) of
-        {'ok', <<>>} -> directory_start(Call, State, CurrUsers, Loop - 1);
-        {'ok', DTMF} -> collect_digits(Call, State, CurrUsers, DTMF);
+        {'ok', <<>>} -> directory_start(Call, State, Loop - 1);
+        {'ok', DTMF} -> collect_digits(Call, State, DTMF);
         {'error', _Error} ->
             lager:error("failed to collect digits: ~p", [_Error]),
             cf_exe:stop(Call)
     end.
 
--spec collect_digits(kapps_call:call(), directory(), directory_users(), binary()) -> 'ok'.
-collect_digits(Call, State, CurrUsers, DTMF) ->
+-spec collect_digits(kapps_call:call(), directory(), binary()) -> 'ok'.
+collect_digits(Call, State, DTMF) ->
     case kapps_call_command:collect_digits(100, ?TIMEOUT_DTMF, ?TIMEOUT_DTMF, Call) of
         {'error', _E} ->
             lager:error("failed to collect digits: ~p", [_E]),
             cf_exe:stop(Call);
         {'ok', <<>>} ->
             _NoopId = kapps_call_command:audio_macro([{'prompt', ?PROMPT_SPECIFY_MINIMUM}], Call),
-            directory_start(Call, State, CurrUsers);
+            directory_start(Call, State);
         {'ok', <<"0">>} ->
             lager:info("caller chose to return to the main menu"),
             cf_exe:continue(Call);
         {'ok', DTMFS} ->
-            maybe_match(Call, add_dtmf(add_dtmf(State, DTMF), DTMFS), CurrUsers)
+            maybe_match(Call, add_dtmf(add_dtmf(State, DTMF), DTMFS))
     end.
 
--spec maybe_match(kapps_call:call(), directory(), directory_users()) -> 'ok'.
-maybe_match(Call, State, CurrUsers) ->
-    case filter_users(CurrUsers, dtmf_collected(State), search_fields(State)) of
+-spec maybe_match(kapps_call:call(), directory()) -> 'ok'.
+maybe_match(Call, State) ->
+    case filter_users(users(State), dtmf_collected(State), search_fields(State)) of
         [] ->
             lager:info("no users left matching DTMF string"),
             _ = play_no_users_found(Call),
-            directory_start(Call, clear_dtmf(State), users(State));
+            directory_start(Call, clear_dtmf(State));
         [User] ->
             lager:info("one user found: ~s", [full_name(User)]),
             case maybe_confirm_match(Call, User, confirm_match(State)) of
@@ -192,7 +192,7 @@ maybe_match(Call, State, CurrUsers) ->
                     route_to_match(Call, callflow(Call, User));
                 'false' ->
                     lager:info("match denied, starting over"),
-                    directory_start(Call, clear_dtmf(State), users(State))
+                    directory_start(Call, clear_dtmf(State))
             end;
         Users ->
             lager:info("more than one match found"),
@@ -201,13 +201,13 @@ maybe_match(Call, State, CurrUsers) ->
 
 -spec matches_menu(kapps_call:call(), directory(), directory_users()) -> 'ok'.
 matches_menu(Call, State, Users) ->
-    maybe_match_users(Call, save_current_users(State, Users), Users, 1).
+    maybe_match_users(Call, State, Users, 1).
 
 -spec maybe_match_users(kapps_call:call(), directory(), directory_users(), pos_integer()) -> 'ok'.
 maybe_match_users(Call, State, [], _) ->
     lager:info("failed to match any users, back to the beginning"),
     _ = play_no_users(Call),
-    directory_start(Call, clear_dtmf(State), users(State));
+    directory_start(Call, clear_dtmf(State));
 maybe_match_users(Call, State, [U|Us], MatchNum) ->
     case maybe_match_user(Call, U, MatchNum, 3) of
         'route' ->
@@ -217,7 +217,7 @@ maybe_match_users(Call, State, [U|Us], MatchNum) ->
             maybe_match_users(Call, State, Us, MatchNum+1);
         'start_over' ->
             lager:info("starting over"),
-            directory_start(Call, clear_dtmf(State), users(State));
+            directory_start(Call, clear_dtmf(State));
         'invalid' ->
             lager:info("invalid key press"),
             _ = play_invalid(Call),
@@ -276,7 +276,7 @@ route_to_match(Call, Callflow) ->
 %% Audio Prompts
 %%------------------------------------------------------------------------------
 -spec play_user(kapps_call:call(), kapps_call_command:audio_macro_prompt(), any()) ->
-                       kapps_call_command:collect_digits_return().
+          kapps_call_command:collect_digits_return().
 play_user(Call, UsernameTuple, _MatchNum) ->
     play_and_collect(Call, [{'prompt', ?PROMPT_RESULT_NUMBER}
                            ,UsernameTuple
@@ -288,7 +288,7 @@ play_invalid(Call) ->
     kapps_call_command:audio_macro([{'prompt', ?PROMPT_INVALID_KEY}], Call).
 
 -spec play_confirm_match(kapps_call:call(), directory_user()) ->
-                                kapps_call_command:collect_digits_return().
+          kapps_call_command:collect_digits_return().
 play_confirm_match(Call, User) ->
     UserName = username_audio_macro(Call, User),
     lager:info("playing confirm_match with username: ~p", [UserName]),
@@ -306,7 +306,7 @@ username_audio_macro(Call, User) ->
     end.
 
 -spec maybe_play_media(kapps_call:call(), directory_user(), kz_term:api_binary()) ->
-                              kapps_call_command:audio_macro_prompt().
+          kapps_call_command:audio_macro_prompt().
 maybe_play_media(Call, User, MediaId) ->
     AccountDb = kapps_call:account_db(Call),
 
@@ -320,8 +320,8 @@ maybe_play_media(Call, User, MediaId) ->
     end.
 
 -spec play_directory_instructions(kapps_call:call(), search_field()) ->
-                                         {'ok', binary()} |
-                                         {'error', atom()}.
+          {'ok', binary()} |
+          {'error', atom()}.
 play_directory_instructions(Call, 'first') ->
     play_and_collect(Call, [{'prompt', ?PROMPT_ENTER_PERSON_FIRSTNAME}]);
 play_directory_instructions(Call, 'last') ->
@@ -338,13 +338,13 @@ play_no_users_found(Call) ->
     kapps_call_command:audio_macro([{'prompt', ?PROMPT_NO_RESULTS_FOUND}], Call).
 
 -spec play_and_collect(kapps_call:call(), kapps_call_command:audio_macro_prompts()) ->
-                              {'ok', binary()} |
-                              {'error', atom()}.
+          {'ok', binary()} |
+          {'error', atom()}.
 play_and_collect(Call, AudioMacro) ->
     play_and_collect(Call, AudioMacro, 1).
 
 -spec play_and_collect(kapps_call:call(), kapps_call_command:audio_macro_prompts(), non_neg_integer()) ->
-                              kapps_call_command:collect_digits_return().
+          kapps_call_command:collect_digits_return().
 play_and_collect(Call, AudioMacro, NumDigits) ->
     NoopID = kapps_call_command:audio_macro(AudioMacro, Call),
     lager:info("play and collect noopID: ~s", [NoopID]),
@@ -364,8 +364,6 @@ add_dtmf(#directory{digits_collected=Collected}=State, NewDTMFs) ->
 
 -spec clear_dtmf(directory()) -> directory().
 clear_dtmf(#directory{}=State) -> State#directory{digits_collected = <<>>}.
-
-save_current_users(#directory{}=State, Users) -> State#directory{curr_users=Users}.
 
 %%------------------------------------------------------------------------------
 %% Directory User Functions
@@ -397,10 +395,10 @@ get_search_fields(<<"first", _/binary>>) -> 'first';
 get_search_fields(_) -> 'last'.
 
 -spec get_directory_listing(kz_term:ne_binary(), kz_term:ne_binary()) ->
-                                   {'ok', directory_users()} |
-                                   {'error', any()}.
+          {'ok', directory_users()} |
+          {'error', any()}.
 get_directory_listing(Db, DirId) ->
-    case kz_datamgr:get_results(Db, ?DIR_DOCS_VIEW, [{'key', DirId}, 'include_docs']) of
+    case kz_datamgr:get_results(Db, ?DIR_DOCS_VIEW, [{'startkey', [DirId]}, {'endkey', [DirId, kz_json:new()]}, 'include_docs']) of
         {'ok', []} ->
             lager:info("no users have been assigned to directory ~s", [DirId]),
             %% play no users in this directory
@@ -468,7 +466,7 @@ queue_users(Users, DTMFs, FirstCheck) ->
                ).
 
 -spec maybe_queue_user(directory_user(), queue:queue(), kz_term:ne_binary(), pos_integer(), search_field()) ->
-                              queue:queue().
+          queue:queue().
 maybe_queue_user(User, Queue, DTMFs, Size, 'both') ->
     case maybe_dtmf_matches(DTMFs, Size, first_check('first', User)) of
         'true' -> queue:in(User, Queue);

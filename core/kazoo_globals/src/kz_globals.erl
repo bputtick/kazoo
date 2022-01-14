@@ -1,7 +1,11 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
 %%% @author Luis Azedo
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_globals).
@@ -239,7 +243,7 @@ handle_call('flush', _From, State) ->
     lager:debug("flushed table"),
     {'reply', 'ok', State};
 handle_call({'whereis_name', Name}, From, State) ->
-    kz_util:spawn(fun maybe_amqp_query/2 , [Name, From]),
+    kz_process:spawn(fun maybe_amqp_query/2 , [Name, From]),
     {'noreply', State};
 handle_call({'delete_remote', Pid}, _From, State) ->
     _ = delete_by_pid(Pid),
@@ -259,7 +263,7 @@ handle_call({'register', Name, Pid}, From
     Global = kz_global:new_global(Name, Pid, Zone, Q, 'pending'),
     lager:debug("inserting ~p for ~p", [Name, Pid]),
     ets:insert(?TAB_NAME, Global),
-    kz_util:spawn(fun amqp_register/2 , [Global, From]),
+    kz_process:spawn(fun amqp_register/2 , [Global, From]),
     {'noreply', State};
 handle_call({'unregister', Name}, _From, State) ->
     {'reply', amqp_unregister(Name), State};
@@ -648,7 +652,7 @@ amqp_reply(JObj, Result) ->
                | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
               ],
     ServerId = kz_api:server_id(JObj),
-    Publisher = fun(P) -> kapi_globals:publish_reply(ServerId, P) end,
+    Publisher = fun(P) -> kapi_globals:publish_reply_msg(ServerId, P) end,
     kz_amqp_worker:cast(Payload, Publisher).
 
 -spec handle_amqp_send(kz_json:object(), kz_term:proplist()) -> 'ok'.
@@ -833,7 +837,7 @@ remonitor_globals() ->
      ).
 
 -spec remonitor_globals('$end_of_table' | {[kz_global:global()], ets:continuation()}) ->
-                               'ok'.
+          'ok'.
 remonitor_globals('$end_of_table') -> 'ok';
 remonitor_globals({[Global], Continuation}) ->
     remonitor_global(Global),

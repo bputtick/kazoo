@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_services_quantities).
@@ -38,7 +42,7 @@
 fetch_account(Services) ->
     AccountId = kz_services:account_id(Services),
     lager:debug("fetching account quantities for ~s", [AccountId]),
-    AccountDb = kz_util:format_account_db(AccountId),
+    AccountDb = kzs_util:format_account_db(AccountId),
     ViewOptions = ['reduce'
                   ,'group'
                   ],
@@ -101,23 +105,30 @@ fetch_account_cascade(AccountId) ->
 fetch(Database, View, ViewOptions) ->
     case kz_datamgr:get_results(Database, View, ViewOptions) of
         {'ok', JObjs} ->
-            Quantities = [{kz_json:get_value(<<"key">>, JObj)
-                          ,kz_json:get_integer_value(<<"value">>, JObj, 0)
-                          }
-                          || JObj <- JObjs
-                         ],
+            Quantities = fetched_quantities(JObjs),
             fetch_to_json(Quantities);
         {'error', _Message} ->
-            ?SUP_LOG_ERROR("failed to query account quantities: ~s with error: ~p", [Database, _Message]),
+            ?SUP_LOG_WARNING("failed to query account quantities: ~s with error: ~p", [Database, _Message]),
             kz_json:new()
     end.
+
+-spec fetched_quantities(kz_json:objects()) -> quantities_prop().
+fetched_quantities(JObjs) ->
+    [{kz_json:get_value(<<"key">>, JObj)
+     ,kz_json:get_integer_value(<<"value">>, JObj, 0)
+     }
+     || JObj <- JObjs
+    ].
 
 -spec fetch_to_json(quantities_prop()) -> kz_json:object().
 fetch_to_json(Quantities) ->
     SubstituteValues = substitute_values(Quantities),
     lists:foldl(fun(Quantity, JObj) ->
                         fetch_to_json_fold(Quantity, SubstituteValues, JObj)
-                end, kz_json:new(), Quantities).
+                end
+               ,kz_json:new()
+               ,Quantities
+               ).
 
 -spec fetch_to_json_fold(quantity_kv(), kz_term:proplist(), kz_json:object()) -> kz_json:object().
 fetch_to_json_fold({[_, Category, Item], Value}, SubstituteValues, JObj) ->
@@ -259,7 +270,7 @@ cascade_item(Services, CategoryName, ItemName) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec calculate_updates(kz_services:services(), billable() | billables(), billable() | billables()) ->
-                               kz_json:object().
+          kz_json:object().
 calculate_updates(Services, 'undefined', ProposedJObjs) ->
     lager:debug("calculating service updates for addition(s)", []),
     calculate_updates(Services, [], ProposedJObjs);
@@ -321,7 +332,8 @@ calculate_updates(Services, JObj) ->
     of
         'true' -> [];
         'false' ->
-            Routines = [fun calculate_user_updates/2
+            Routines = [fun calculate_account_updates/2
+                       ,fun calculate_user_updates/2
                        ,fun calculate_device_updates/2
                        ,fun calculate_limits_updates/2
                        ,fun calculate_whitelabel_updates/2
@@ -336,14 +348,18 @@ calculate_updates(Services, JObj) ->
                        ,fun calculate_conference_updates/2
                        ,fun calculate_port_request_updates/2
                        ],
-            Updates = lists:foldl(fun(F, Updates) ->
-                                          F(JObj, Updates)
-                                  end, [], Routines),
+            Updates = exec_routines(Routines, JObj),
             case has_substitute_values(Updates) of
                 'false' -> Updates;
                 'true' -> substitute_values(Services, Updates)
             end
     end.
+
+exec_routines(Routines, JObj) ->
+    lists:foldl(fun(F, Updates) -> F(JObj, Updates) end
+               ,[]
+               ,Routines
+               ).
 
 -spec sum_updates(kz_term:proplist(), kz_term:proplist()) -> kz_term:proplist().
 sum_updates([], Updates) -> Updates;
@@ -375,6 +391,16 @@ substitute_values(Services, Updates) ->
               end
              ,Updates
              ).
+
+
+-spec calculate_account_updates(kz_json:object(), kz_term:proplist()) -> kz_term:proplist().
+calculate_account_updates(JObj, Updates) ->
+    case kz_doc:type(JObj) =:= <<"user">> of
+        'false' -> Updates;
+        'true' ->
+            Key = [<<"accounts">>, <<"account">>],
+            [{Key, 1} | Updates]
+    end.
 
 -spec calculate_user_updates(kz_json:object(), kz_term:proplist()) -> kz_term:proplist().
 calculate_user_updates(JObj, Updates) ->
@@ -445,34 +471,35 @@ calculate_app_store_updates(JObj, Updates) ->
         'true' ->
             Blacklist = kz_json:get_list_value(<<"blacklist">>, JObj, []),
             Apps = kz_json:get_json_value(<<"apps">>, JObj, kz_json:new()),
-            kz_json:foldl(fun(_K, App, U) ->
-                                  Name = kz_json:get_ne_binary_value(<<"name">>, App),
-                                  AccountKey = [<<"account_apps">>, Name],
-                                  case kz_json:get_ne_value(<<"allowed_users">>, App) of
-                                      <<"all">> ->
-                                          UserKey = [<<"user_apps">>, Name],
-                                          [{UserKey, -1}
-                                          ,{AccountKey, 1}
-                                           | U
-                                          ];
-                                      <<"admins">> ->
-                                          UserKey = [<<"user_apps">>, Name],
-                                          [{UserKey, -2}
-                                          ,{AccountKey, 1}
-                                           | U
-                                          ];
-                                      <<"specific">> ->
-                                          UserKey = [<<"user_apps">>, Name],
-                                          Value = length(kz_json:get_list_value(<<"users">>, App, [])),
-                                          [{UserKey, Value}
-                                          ,{AccountKey, 1}
-                                           | U
-                                          ]
-                                  end
-                          end
+            kz_json:foldl(fun app_store_updates_fold/3
                          ,Updates
                          ,kz_json:delete_keys(Blacklist, Apps)
                          )
+    end.
+
+app_store_updates_fold(_K, App, U) ->
+    Name = kz_json:get_ne_binary_value(<<"name">>, App),
+    AccountKey = [<<"account_apps">>, Name],
+    case kz_json:get_ne_value(<<"allowed_users">>, App) of
+        <<"all">> ->
+            UserKey = [<<"user_apps">>, Name],
+            [{UserKey, -1}
+            ,{AccountKey, 1}
+             | U
+            ];
+        <<"admins">> ->
+            UserKey = [<<"user_apps">>, Name],
+            [{UserKey, -2}
+            ,{AccountKey, 1}
+             | U
+            ];
+        <<"specific">> ->
+            UserKey = [<<"user_apps">>, Name],
+            Value = length(kz_json:get_list_value(<<"users">>, App, [])),
+            [{UserKey, Value}
+            ,{AccountKey, 1}
+             | U
+            ]
     end.
 
 -spec calculate_number_updates(kz_json:object(), kz_term:proplist()) -> kz_term:proplist().
@@ -532,7 +559,8 @@ calculate_qubicle_queue_updates(JObj, Updates) ->
     case kz_doc:type(JObj) =:= <<"qubicle_queue">> of
         'false' -> Updates;
         'true' ->
-            Key = [<<"qubicle">>, <<"queues">>],
+            Offering = kz_json:get_ne_value(<<"pvt_offering">>, JObj, <<"basic">>),
+            Key = [<<"qubicle">>, <<Offering/binary, "_queue">>],
             [{Key, 1} | Updates]
     end.
 
@@ -543,7 +571,8 @@ calculate_qubicle_recipient_updates(JObj, Updates) ->
     of
         'false' -> Updates;
         'true' ->
-            Key = [<<"qubicle">>, <<"recipients">>],
+            Offering = kz_json:get_ne_value([<<"qubicle">>, <<"recipient">>, <<"offering">>], JObj, <<"basic">>),
+            Key = [<<"qubicle">>, <<Offering/binary, "_recipient">>],
             [{Key, 1} | Updates]
     end.
 
@@ -552,8 +581,21 @@ calculate_vmbox_updates(JObj, Updates) ->
     case kz_doc:type(JObj) =:= <<"vmbox">> of
         'false' -> Updates;
         'true' ->
-            Key = [<<"voicemails">>, <<"mailbox">>],
-            [{Key, 1} | Updates]
+            Keys = [<<"mailbox">>, <<"transcription">>],
+            Fun = calculate_vmbox_updates_foldl(JObj),
+            lists:foldl(Fun, Updates, Keys)
+    end.
+
+-spec calculate_vmbox_updates_foldl(kz_json:object()) -> fun((kz_term:ne_binary(), kz_term:proplist()) -> kz_term:proplist()).
+calculate_vmbox_updates_foldl(JObj) ->
+    fun(<<"transcription">> = Key, Updates) ->
+            case kz_json:get_boolean_value(<<"transcribe">>, JObj, 'false') of
+                'true' ->
+                    [{[<<"voicemails">>, Key], 1} | Updates];
+                _ -> Updates
+            end;
+       (Key, Updates) ->
+            [{[<<"voicemails">>, Key], 1} | Updates]
     end.
 
 -spec calculate_faxbox_updates(kz_json:object(), kz_term:proplist()) -> kz_term:proplist().

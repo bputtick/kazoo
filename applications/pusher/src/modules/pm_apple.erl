@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(pm_apple).
@@ -36,7 +40,7 @@ start_link() ->
 
 -spec init([]) -> {'ok', state()}.
 init([]) ->
-    kz_util:put_callid(?MODULE),
+    kz_log:put_callid(?MODULE),
     {'ok', #state{tab=ets:new(?MODULE, [])}}.
 
 -spec handle_call(any(), kz_term:pid_ref(), state()) -> kz_types:handle_call_ret_state(state()).
@@ -45,7 +49,7 @@ handle_call(_Request, _From, State) ->
 
 -spec handle_cast(any(), state()) -> kz_types:handle_cast_ret_state(state()).
 handle_cast({'push', JObj}, #state{tab=ETS}=State) ->
-    kz_util:put_callid(JObj),
+    kz_log:put_callid(JObj),
     TokenApp = kz_json:get_value(<<"Token-App">>, JObj),
     maybe_send_push_notification(get_apns(TokenApp, ETS), JObj),
     {'noreply', State};
@@ -116,7 +120,7 @@ maybe_load_apns(App, _, 'undefined', _, _) ->
 maybe_load_apns(App, ETS, CertBin, Host, Headers) ->
     {Key, Cert} = pusher_util:binary_to_keycert(CertBin),
     lager:debug("starting apple push connection for ~s : ~s", [App, Host]),
-    Connection = #{name => kz_term:to_atom(App, 'true')
+    Connection = #{name => kz_term:to_atom(<<"apns_", App/binary>>, 'true')
                   ,apple_host => kz_term:to_list(Host)
                   ,apple_port => 443
                   ,certdata => Cert

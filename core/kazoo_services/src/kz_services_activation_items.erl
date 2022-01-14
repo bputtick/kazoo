@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_services_activation_items).
@@ -15,7 +19,7 @@
 
 -include("services.hrl").
 
--opaque items() :: [kz_services_activation_item:item()].
+-type items() :: [kz_services_activation_item:item()].
 -type fold_fun() :: fun((kz_services_activation_item:item(), Acc) -> Acc).
 -export_type([items/0
              ,fold_fun/0
@@ -26,8 +30,7 @@
 %% @end
 %%------------------------------------------------------------------------------
 -spec empty() -> items().
-empty() ->
-    [].
+empty() -> [].
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -49,11 +52,11 @@ calculate_total(ActivationItems) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec create(kz_service_items:items()) -> items().
+-spec create(kz_services_items:items()) -> items().
 create(Items) ->
-    lists:foldl(fun create_fold/2, empty(), Items).
+    kz_services_items:foldl(fun create_fold/2, empty(), Items).
 
--spec create_fold(kz_service_item:item(), items()) -> items().
+-spec create_fold(kz_services_item:item(), items()) -> items().
 create_fold(Item, Acc) ->
     case kz_services_activation_item:create(Item) of
         'undefined' -> Acc;

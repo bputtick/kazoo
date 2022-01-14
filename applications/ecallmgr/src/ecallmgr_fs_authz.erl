@@ -1,8 +1,13 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc Make a request for authorization, and answer queries about the CallID
 %%% @author James Aimonetti
 %%% @author Karl Anderson
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_fs_authz).
@@ -31,7 +36,7 @@
 
 -spec authorize(kzd_freeswitch:data(), kz_term:ne_binary(), atom()) -> authz_reply().
 authorize(Data, CallId, Node) ->
-    kz_util:put_callid(CallId),
+    kz_log:put_callid(CallId),
     AuthorizeReply = is_emergency_number(Data)
         orelse is_mobile_device(Data)
         orelse maybe_authorized_channel(Data, Node),
@@ -152,7 +157,7 @@ is_consuming_inbound_resource(Data, CallId, Node) ->
     end.
 
 -spec request_channel_authorization(kzd_freeswitch:data(), kz_term:ne_binary(), atom()) ->
-                                           authz_reply().
+          authz_reply().
 request_channel_authorization(Data, CallId, Node) ->
     lager:debug("channel authorization request started"),
     ReqResp = kz_amqp_worker:call(authz_req(Data)
@@ -197,13 +202,13 @@ authz_response(JObj, Data, CallId, Node) ->
                                                               ,{<<"Reseller-Billing">>, ResellerBilling}
                                                               ,{<<"Reseller-ID">>, ResellerId}
                                                               ]),
-                    _ = kz_util:spawn(fun kill_channel/2, [Data, Node]),
+                    _ = kz_process:spawn(fun kill_channel/2, [Data, Node]),
                     'false'
             end
     end.
 
 -spec authorize_account(kz_json:object(), kzd_freeswitch:data(), kz_term:ne_binary(), atom()) ->
-                               authz_reply().
+          authz_reply().
 authorize_account(JObj, Data, CallId, Node) ->
     AccountId = kz_json:get_value(<<"Account-ID">>, JObj),
     Type      = kz_json:get_value(<<"Account-Billing">>, JObj),
@@ -225,7 +230,7 @@ maybe_add_outbound_flags(JObj) ->
     end.
 
 -spec authorize_reseller(kz_json:object(), kzd_freeswitch:data(), kz_term:ne_binary(), atom()) ->
-                                authz_reply().
+          authz_reply().
 authorize_reseller(JObj, Data, CallId, Node) ->
     AccountId = kzd_freeswitch:account_id(Data),
     case kz_json:get_value(<<"Reseller-ID">>, JObj, AccountId) of
@@ -240,7 +245,7 @@ authorize_reseller(JObj, Data, CallId, Node) ->
     end.
 
 -spec set_ccv_trunk_usage(kz_json:object(), kzd_freeswitch:data(), kz_term:ne_binary(), atom()) ->
-                                 authz_reply().
+          authz_reply().
 set_ccv_trunk_usage(JObj, Data, CallId, Node) ->
     Usage = [{Key, TrunkUsage}
              || Key <- [<<"Account-Trunk-Usage">>
@@ -253,7 +258,7 @@ set_ccv_trunk_usage(JObj, Data, CallId, Node) ->
 
 -spec rate_call(kzd_freeswitch:data(), kz_term:ne_binary(), atom()) -> authz_reply().
 rate_call(Data, CallId, Node) ->
-    _P = kz_util:spawn(fun rate_channel/2, [Data, Node]),
+    _P = kz_process:spawn(fun rate_channel/2, [Data, Node]),
     lager:debug("rating call in ~p", [_P]),
     allow_call(Data, CallId, Node).
 
@@ -282,7 +287,7 @@ allow_call(Data, _CallId, _Node) ->
 -spec rate_channel(kzd_freeswitch:data(), atom()) -> 'ok'.
 rate_channel(Data, Node) ->
     CallId = kzd_freeswitch:call_id(Data),
-    kz_util:put_callid(CallId),
+    kz_log:put_callid(CallId),
     Direction = kzd_freeswitch:call_direction(Data),
     ReqResp = kz_amqp_worker:call(rating_req(CallId, Data)
                                  ,fun kapi_rate:publish_req/1
@@ -325,7 +330,7 @@ authz_default(Data, CallId, Node) ->
     of
         'false' -> rate_call(Data, CallId, Node);
         'true' ->
-            _ = kz_util:spawn(fun kill_channel/2, [Data, Node]),
+            _ = kz_process:spawn(fun kill_channel/2, [Data, Node]),
             'false'
     end.
 
@@ -354,7 +359,7 @@ get_rating_ccvs(JObj) ->
                ).
 
 -spec rating_ccv(kz_term:ne_binary(), kz_term:proplist(), kz_json:object()) ->
-                        kz_term:proplist().
+          kz_term:proplist().
 rating_ccv(<<"Rate">>, Acc, JObj) ->
     maybe_update_callee_id(JObj, Acc);
 rating_ccv(Key, Acc, JObj) ->

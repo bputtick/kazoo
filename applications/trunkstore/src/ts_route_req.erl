@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc Handle route requests off AMQP
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ts_route_req).
@@ -18,7 +23,7 @@ init() -> 'ok'.
 -spec handle_req(kapi_route:req(), kz_term:proplist()) -> any().
 handle_req(RouteReq, _Options) ->
     'true' = kapi_route:req_v(RouteReq),
-    kz_util:put_callid(kapi_route:call_id(RouteReq)),
+    kz_log:put_callid(kapi_route:call_id(RouteReq)),
     kz_amqp_worker:worker_pool(trunkstore_sup:pool_name()),
 
     lager:info("received request ~s asking if trunkstore can route this call", [kapi_route:fetch_id(RouteReq)]),
@@ -49,14 +54,14 @@ maybe_handle(RouteReq, HandlerFun, {'ok', AMQPWorker}) ->
 
 -spec handle_onnet_req(kapi_route:req(), pid()) -> any().
 handle_onnet_req(RouteReq, AMQPWorker) ->
-    %% Coming from PBX (on-net); authed by Registrar or ts_auth
+    %% Coming from PBX (onnet); authed by Registrar or ts_auth
     CallId = kapi_route:call_id(RouteReq),
     lager:info("call with fetch-id ~s began on the network", [kapi_route:fetch_id(RouteReq)]),
     ts_onnet_sup:start_handler(<<"onnet-", CallId/binary>>, RouteReq, AMQPWorker).
 
 -spec handle_offnet_req(kapi_route:req(), pid()) -> any().
 handle_offnet_req(RouteReq, AMQPWorker) ->
-    %% Coming from carrier (off-net)
+    %% Coming from carrier (offnet)
     CallId = kapi_route:call_id(RouteReq),
     lager:info("call with fetch-id ~s began from outside the network", [kapi_route:fetch_id(RouteReq)]),
     ts_offnet_sup:start_handler(<<"offnet-", CallId/binary>>, RouteReq, AMQPWorker).

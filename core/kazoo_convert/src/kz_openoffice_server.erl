@@ -1,7 +1,11 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
 %%% @author Sean Wysor
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_openoffice_server).
@@ -72,7 +76,7 @@ add(Source, Options) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec init(list()) -> {'ok', state()} |
-                      {'stop', any()}.
+          {'stop', any()}.
 init([]) ->
     {'ok', #state{
               'timer_ref' = start_timer(?TIMEOUT_DEQUEUE)
@@ -83,7 +87,7 @@ init([]) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec handle_call({atom(), {'file', kz_term:ne_binary()}, map()}, kz_term:pid_ref(), state()) ->
-                         kz_types:handle_call_ret_state(state()).
+          kz_types:handle_call_ret_state(state()).
 handle_call('stop', _From, #state{} = State) ->
     {'stop', 'normal', 'ok', State};
 handle_call({'add', Content, Options}, From, #state{queue=Queue}=State) ->

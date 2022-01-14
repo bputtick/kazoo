@@ -1,13 +1,18 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc
 %%% @author Peter Defebvre
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(cb_ips).
 
 -export([init/0
-        ,authorize/1
+        ,authorize/1, authorize/2
         ,allowed_methods/0, allowed_methods/1
         ,resource_exists/0, resource_exists/1
         ,validate/1, validate/2
@@ -32,7 +37,7 @@
 %%------------------------------------------------------------------------------
 -spec init() -> 'ok'.
 init() ->
-    _ = crossbar_bindings:bind(<<"*.authorize">>, ?MODULE, 'authorize'),
+    _ = crossbar_bindings:bind(<<"*.authorize.ips">>, ?MODULE, 'authorize'),
     _ = crossbar_bindings:bind(<<"*.allowed_methods.ips">>, ?MODULE, 'allowed_methods'),
     _ = crossbar_bindings:bind(<<"*.resource_exists.ips">>, ?MODULE, 'resource_exists'),
     _ = crossbar_bindings:bind(<<"*.validate.ips">>, ?MODULE, 'validate'),
@@ -43,11 +48,16 @@ init() ->
 -spec authorize(cb_context:context()) -> boolean().
 authorize(Context) ->
     _ = cb_context:put_reqid(Context),
-    authorize(Context, cb_context:req_nouns(Context)).
+    authorize_nouns(Context, cb_context:req_nouns(Context)).
 
-authorize(Context, [{<<"ips">>, _}]) ->
+-spec authorize(cb_context:context(), path_token()) -> boolean().
+authorize(Context, _) ->
+    _ = cb_context:put_reqid(Context),
+    authorize_nouns(Context, cb_context:req_nouns(Context)).
+
+authorize_nouns(Context, [{<<"ips">>, _}]) ->
     cb_context:is_superduper_admin(Context);
-authorize(_Context, _Nouns) -> 'false'.
+authorize_nouns(_Context, _Nouns) -> 'false'.
 
 %%------------------------------------------------------------------------------
 %% @doc Given the path tokens related to this module, what HTTP methods are
@@ -329,7 +339,7 @@ additional_assignment_validations(Context) ->
     additional_assignment_validations(Context, IPs, [], 0).
 
 -spec additional_assignment_validations(cb_context:context(), kz_term:proplist(), kz_json:objects(), non_neg_integer()) ->
-                                               cb_context:context().
+          cb_context:context().
 additional_assignment_validations(Context, [], Assign, _Index) ->
     case cb_context:resp_status(Context) =:= 'success' of
         'false' -> Context;
@@ -360,7 +370,7 @@ additional_assignment_validations(Context, [{_Address, {'error', Reason}}|_IPs],
                                ).
 
 -spec validate_error_already_assigned(cb_context:context(), kz_term:ne_binary(), non_neg_integer()) ->
-                                             cb_context:context().
+          cb_context:context().
 validate_error_already_assigned(Context, IP, Index) ->
     Key = <<"ips.", (kz_term:to_binary(Index))/binary>>,
     Message = kz_json:from_list(
@@ -370,7 +380,7 @@ validate_error_already_assigned(Context, IP, Index) ->
     cb_context:add_validation_error(Key, <<"superfluous">>, Message, Context).
 
 -spec validate_error_assigned(cb_context:context(), kz_term:ne_binary(), non_neg_integer()) ->
-                                     cb_context:context().
+          cb_context:context().
 validate_error_assigned(Context, IP, Index) ->
     Key = <<"ips.", (kz_term:to_binary(Index))/binary>>,
     Message = kz_json:from_list(
@@ -380,7 +390,7 @@ validate_error_assigned(Context, IP, Index) ->
     cb_context:add_validation_error(Key, <<"forbidden">>, Message, Context).
 
 -spec validate_error_not_found(cb_context:context(), kz_term:ne_binary(), non_neg_integer()) ->
-                                      cb_context:context().
+          cb_context:context().
 validate_error_not_found(Context, IP, Index) ->
     Key = <<"ips.", (kz_term:to_binary(Index))/binary>>,
     Message = kz_json:from_list(
@@ -392,7 +402,8 @@ validate_error_not_found(Context, IP, Index) ->
 -spec maybe_dry_run_assignment(cb_context:context()) -> cb_context:context().
 maybe_dry_run_assignment(Context) ->
     ProposedJObjs = cb_context:fetch(Context, 'assign_ips', []),
-    crossbar_services:maybe_dry_run(Context, [], ProposedJObjs).
+    {_AllowedOrDenied, Context1} = crossbar_services:maybe_dry_run(Context, [], ProposedJObjs),
+    Context1.
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -458,7 +469,7 @@ additional_release_validations(Context) ->
     additional_release_validations(Context, IPs, [], 0).
 
 -spec additional_release_validations(cb_context:context(), kz_term:proplist(), kz_json:objects(), non_neg_integer()) ->
-                                            cb_context:context().
+          cb_context:context().
 additional_release_validations(Context, [], Release, _Index) ->
     cb_context:store(Context, 'release_ips', Release);
 additional_release_validations(Context, [{Address, {'ok', JObj}} | IPs], Release, Index) ->
@@ -483,7 +494,7 @@ additional_release_validations(Context, [{_Address, {'error', Reason}}|_IPs], _R
                                ).
 
 -spec validate_error_not_assigned(cb_context:context(), kz_term:ne_binary(), non_neg_integer()) ->
-                                         cb_context:context().
+          cb_context:context().
 validate_error_not_assigned(Context, IP, Index) ->
     Key = <<"ips.", (kz_term:to_binary(Index))/binary>>,
     Message = kz_json:from_list(

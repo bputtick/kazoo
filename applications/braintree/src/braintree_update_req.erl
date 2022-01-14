@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2013-2019, 2600Hz
+%%% @copyright (C) 2013-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(braintree_update_req).
@@ -117,7 +121,7 @@ sync(#request{bookkeeper_jobj='undefined'
     lager:debug("fetching bookkeeper document ~s/~s"
                ,[VendorId, BookkeeperId]
                ),
-    VendorDb = kz_util:format_account_db(VendorId),
+    VendorDb = kzs_util:format_account_db(VendorId),
     case kz_datamgr:open_cache_doc(VendorDb, BookkeeperId) of
         {'ok', BookkeeperJObj} ->
             ?APP_NAME = kzd_bookkeeper:bookkeeper_type(BookkeeperJObj),
@@ -315,7 +319,7 @@ get_plan_subscription(PlanId, #request{updates=Updates
     end.
 
 -spec get_plan_subscription(kz_term:ne_binary(), request(), braintree_customer:customer()) ->
-                                   braintree_subscription:subscription().
+          braintree_subscription:subscription().
 get_plan_subscription(PlanId, Request, #bt_customer{}=Customer) ->
     try braintree_customer:get_subscription(PlanId, Customer) of
         Subscription ->

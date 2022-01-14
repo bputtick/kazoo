@@ -1,6 +1,11 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc Handles storage proxy requests for media binaries
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(media_store_proxy).
@@ -27,7 +32,7 @@
 
 -spec init(cowboy_req:req(), kz_term:proplist()) -> handler_return().
 init(Req, _Opts) ->
-    kz_util:put_callid(kz_binary:rand_hex(16)),
+    kz_log:put_callid(kz_binary:rand_hex(16)),
     check_authn(Req, authenticate(Req)).
 
 -spec check_authn(cowboy_req:req(), boolean()) -> handler_return().
@@ -197,7 +202,7 @@ setup_context(Req, #media_store_path{att=Attachment}=Path) ->
 
 -spec decode_url(kz_term:ne_binary()) -> media_store_path() | 'error'.
 decode_url(Url) ->
-    try binary_to_term(base64:decode(kz_util:uri_decode(Url))) of
+    try binary_to_term(base64:decode(kz_http_util:urldecode(Url))) of
         {Db, Id, Attachment, Options} ->
             #media_store_path{db = Db
                              ,id = Id
@@ -275,7 +280,7 @@ store(#state{filename=Filename, media=Path}=State, Req) ->
     end.
 
 -spec store(media_store_path(), kz_term:ne_binary(), state(), cowboy_req:req()) ->
-                   {'ok', cowboy_req:req(), state()}.
+          {'ok', cowboy_req:req(), state()}.
 store(#media_store_path{db=Db
                        ,id=Id
                        ,att=Attachment

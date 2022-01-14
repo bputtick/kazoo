@@ -1,20 +1,27 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
 %%% @author Roman Galeev
 %%% @author Hesaam Farhang
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(crossbar_view).
 
 -export([load/2, load/3
-        ,load_range/2, load_range/3
+        ,load_time_range/2, load_time_range/3
         ,load_modb/2, load_modb/3
+        ,load_yodb/2, load_yodb/3
         ,next_chunk/1
 
         ,build_load_params/3
-        ,build_load_range_params/3
+        ,build_load_time_range_params/3
         ,build_load_modb_params/3
+        ,build_load_yodb_params/3
 
         ,direction/1, direction/2
 
@@ -27,8 +34,12 @@
 
         ,suffix_key_fun/1
 
-        ,map_doc_fun/0
-        ,map_value_fun/0
+        ,get_doc_fun/0
+        ,get_value_fun/0
+        ,get_key_fun/0
+        ,get_id_fun/0
+
+        ,high_value_key/0
         ]).
 
 -include("crossbar.hrl").
@@ -52,6 +63,8 @@
         ]).
 
 -type direction() :: 'ascending' | 'descending'.
+
+-type page_size() :: kz_term:api_pos_integer() | 'infinity'.
 
 -type time_range() :: {kz_time:gregorian_seconds(), kz_time:gregorian_seconds()}.
 %% `{StartTimestamp, EndTimestamp}'.
@@ -159,19 +172,20 @@ load(Context, View) ->
 load(Context, View, Options) ->
     load_view(build_load_params(Context, View, Options), Context).
 
-%% @equiv load_range(Context, View, [])
--spec load_range(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
-load_range(Context, View) ->
-    load_range(Context, View, []).
+%% @equiv load_time_range(Context, View, [])
+-spec load_time_range(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
+load_time_range(Context, View) ->
+    load_time_range(Context, View, []).
 
 %%------------------------------------------------------------------------------
-%% @doc This function attempts to load the context with the timestamped
+%% @doc This function attempts to load the context with the timestampe
 %% results of a view run against the database.
 %% @end
 %%------------------------------------------------------------------------------
--spec load_range(cb_context:context(), kz_term:ne_binary(), options()) -> cb_context:context().
-load_range(Context, View, Options) ->
-    load_view(build_load_range_params(Context, View, Options), Context).
+-spec load_time_range(cb_context:context(), kz_term:ne_binary(), options()) -> cb_context:context().
+load_time_range(Context, View, Options) ->
+    load_view(build_load_time_range_params(Context, View, Options), Context).
+
 
 %% @equiv load_modb(Context, View, [])
 -spec load_modb(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
@@ -183,9 +197,27 @@ load_modb(Context, View) ->
 %% run against the account's MODBs.
 %% @end
 %%------------------------------------------------------------------------------
+
 -spec load_modb(cb_context:context(), kz_term:ne_binary(), options()) -> cb_context:context().
 load_modb(Context, View, Options) ->
-    load_view(build_load_modb_params(Context, View, Options), Context).
+    LoadParams = build_load_modb_params(Context, View, Options),
+    load_view(LoadParams, Context).
+
+
+%% @equiv load_yodb(Context, View, [])
+-spec load_yodb(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
+load_yodb(Context, View) ->
+    load_yodb(Context, View, []).
+
+%%------------------------------------------------------------------------------
+%% @doc This function attempts to load the context with the results of a view
+%% run against the account's YODBs.
+%% @end
+%%------------------------------------------------------------------------------
+-spec load_yodb(cb_context:context(), kz_term:ne_binary(), options()) -> cb_context:context().
+load_yodb(Context, View, Options) ->
+    LoadParams = build_load_yodb_params(Context, View, Options),
+    load_view(LoadParams, Context).
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -218,7 +250,7 @@ build_load_params(Context, View, Options) ->
     catch
         ?STACKTRACE(_E, _T, ST)
         lager:debug("exception occurred during building view options for ~s", [View]),
-        kz_util:log_stacktrace(ST),
+        kz_log:log_stacktrace(ST),
         cb_context:add_system_error('datastore_fault', Context)
         end.
 
@@ -228,9 +260,9 @@ build_load_params(Context, View, Options) ->
 %% of a view over a specified range of time.
 %% @end
 %%------------------------------------------------------------------------------
--spec build_load_range_params(cb_context:context(), kz_term:ne_binary(), options()) ->
-                                     load_params() | cb_context:context().
-build_load_range_params(Context, View, Options) ->
+-spec build_load_time_range_params(cb_context:context(), kz_term:ne_binary(), options()) ->
+          load_params() | cb_context:context().
+build_load_time_range_params(Context, View, Options) ->
     try build_general_load_params(Context, View, Options) of
         #{direction := Direction}=LoadMap ->
             TimeFilterKey = props:get_ne_binary_value('range_key_name', Options, <<"created">>),
@@ -261,7 +293,7 @@ build_load_range_params(Context, View, Options) ->
     catch
         ?STACKTRACE(_E, _T, ST)
         lager:debug("exception occurred during building range view options for ~s", [View]),
-        kz_util:log_stacktrace(ST),
+        kz_log:log_stacktrace(ST),
         cb_context:add_system_error('datastore_fault', Context)
         end.
 
@@ -272,14 +304,34 @@ build_load_range_params(Context, View, Options) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec build_load_modb_params(cb_context:context(), kz_term:ne_binary(), options()) ->
-                                    load_params() | cb_context:context().
+          load_params() | cb_context:context().
 build_load_modb_params(Context, View, Options) ->
-    case build_load_range_params(Context, View, Options) of
+    case build_load_time_range_params(Context, View, Options) of
         #{direction := Direction
          ,start_time := StartTime
          ,end_time := EndTime
          }=LoadMap ->
             LoadMap#{databases => get_range_modbs(Context, Options, Direction, StartTime, EndTime)};
+        Ctx -> Ctx
+    end.
+
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% Takes {@link options()} and returns {@link load_params()}, for querying
+%% of a view over a specified range of time in account's MODBs.
+%% @end
+%%------------------------------------------------------------------------------
+-spec build_load_yodb_params(cb_context:context(), kz_term:ne_binary(), options()) ->
+          load_params() | cb_context:context().
+build_load_yodb_params(Context, View, Options) ->
+    case build_load_time_range_params(Context, View, Options) of
+        #{direction := Direction
+         ,start_time := StartTime
+         ,end_time := EndTime
+         }=LoadMap ->
+            Databases =  get_range_yodbs(Context, Options, Direction, StartTime, EndTime),
+            LoadMap#{databases => lists:usort(Databases)};
         Ctx -> Ctx
     end.
 
@@ -293,7 +345,7 @@ build_load_modb_params(Context, View, Options) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec build_view_query(options(), direction(), api_range_key(), api_range_key(), boolean()) ->
-                              kazoo_data:view_options().
+          kazoo_data:view_options().
 build_view_query(Options, Direction, StartKey, EndKey, HasQSFilter) ->
     DeleteKeys = ['startkey', 'endkey'
                  ,'descending', 'limit'
@@ -464,7 +516,7 @@ expand_min_max_key('min_max', 'ascending') ->
     'false';
 expand_min_max_key('min_max', 'descending') ->
     lager:debug("padding descending composite key"),
-    <<16#fff0/utf8>>;
+    high_value_key();
 expand_min_max_key(RangeKey, _) -> RangeKey.
 
 -spec maybe_min_max_pad(kz_term:api_non_neg_integer(), api_range_key()) -> api_range_key() | ['min_max'].
@@ -475,6 +527,9 @@ maybe_min_max_pad(KeyMinLength, RangeKey) ->
 -spec min_max_pad(non_neg_integer(), api_range_key()) -> api_range_key() | ['min_max'].
 min_max_pad(0, RangeKey) -> RangeKey;
 min_max_pad(N, RangeKey) -> min_max_pad(N-1, ['min_max' | RangeKey]).
+
+-spec high_value_key() -> kz_term:ne_binary().
+high_value_key() -> <<16#fff0/utf8>>.
 
 %% @equiv direction(Context, [])
 -spec direction(cb_context:context()) -> direction().
@@ -539,7 +594,7 @@ time_range(Context, Options, Key) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec time_range(cb_context:context(), pos_integer(), kz_term:ne_binary(), pos_integer(), pos_integer()) ->
-                        time_range() | cb_context:context().
+          time_range() | cb_context:context().
 time_range(Context, MaxRange, Key, RangeFrom, RangeTo) ->
     Path = <<Key/binary, "_from">>,
     case RangeTo - RangeFrom of
@@ -561,24 +616,40 @@ time_range(Context, MaxRange, Key, RangeFrom, RangeTo) ->
 %% @doc Returns a function to get `doc' object from each view result.
 %% @end
 %%------------------------------------------------------------------------------
--spec map_doc_fun() -> mapper_fun().
-map_doc_fun() -> fun(JObj, Acc) -> [kz_json:get_json_value(<<"doc">>, JObj)|Acc] end.
+-spec get_doc_fun() -> mapper_fun().
+get_doc_fun() -> fun(JObj, Acc) -> [kz_json:get_json_value(<<"doc">>, JObj)|Acc] end.
 
 %%------------------------------------------------------------------------------
 %% @doc Returns a function to get `value' object from each view result.
 %% @end
 %%------------------------------------------------------------------------------
--spec map_value_fun() -> mapper_fun().
-map_value_fun() -> fun(JObj, Acc) -> [kz_json:get_value(<<"value">>, JObj)|Acc] end.
+-spec get_value_fun() -> mapper_fun().
+get_value_fun() -> fun(JObj, Acc) -> [kz_json:get_value(<<"value">>, JObj)|Acc] end.
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec get_key_fun() -> mapper_fun().
+get_key_fun() -> fun(JObj, Acc) -> [kz_json:get_value(<<"key">>, JObj)|Acc] end.
+
+%%------------------------------------------------------------------------------
+%% @doc Returns a function to get `value' object from each view result.
+%% @end
+%%------------------------------------------------------------------------------
+-spec get_id_fun() -> mapper_fun().
+get_id_fun() -> fun(JObj, Acc) -> [kz_doc:id(JObj)|Acc] end.
 
 %%------------------------------------------------------------------------------
 %% @doc If pagination available, returns page size.
 %%
 %% <div class="notice">DO NOT ADD ONE (1) TO PAGE_SIZE OR LIMIT YOURSELF!
 %% It will be added by this module during querying.</div>
+%% If `paginate=false` is explicitly set, still load results in pages but check
+%% process' memory usage on each page, terminating if memory exceeds a threshold
 %% @end
 %%------------------------------------------------------------------------------
--spec get_page_size(cb_context:context(), options()) -> kz_term:api_pos_integer().
+-spec get_page_size(cb_context:context(), options()) -> page_size().
 get_page_size(Context, Options) ->
     case props:is_true('should_paginate', Options, 'true')
         andalso cb_context:should_paginate(Context)
@@ -593,7 +664,7 @@ get_page_size(Context, Options) ->
             end;
         'false' ->
             lager:debug("pagination disabled in context or option"),
-            'undefined'
+            'infinity'
     end.
 
 %%%=============================================================================
@@ -762,7 +833,7 @@ chunk_map_roll_in(#{last_key := OldLastKey}=ChunkMap
 get_results(#{databases := []}=LoadMap) ->
     lager:debug("databases exhausted"),
     LoadMap;
-get_results(#{databases := [Db|RestDbs]=Dbs
+get_results(#{databases := [Db|RestDbs]
              ,view := View
              ,view_options := ViewOpts
              ,direction := Direction
@@ -802,16 +873,39 @@ get_results(#{databases := [Db|RestDbs]=Dbs
             lager:debug("failed to query view ~s from db ~s: ~p", [View, Db, Error]),
             LoadMap#{context => crossbar_doc:handle_datamgr_errors(Error, View, Context)};
         {'ok', JObjs} ->
-            %% catching crashes when applying users map functions (filter map)
-            %% so we can handle errors when request is chunked and chunk is already started
-            try handle_query_result(LoadMap, Dbs, JObjs, LimitWithLast)
-            catch
-                ?STACKTRACE(_E, _T, ST)
-                lager:debug("exception occurred during querying db ~s for view ~s : ~p:~p", [Db, View, _E, _T]),
-                kz_util:log_stacktrace(ST),
-                LoadMap#{context => cb_context:add_system_error('datastore_fault', Context)}
-                end
+            handle_query_results(LoadMap, JObjs, LimitWithLast)
     end.
+
+handle_query_results(LoadMap, JObjs, LimitWithLast) ->
+    [{'memory', End}] = process_info(self(), ['memory']),
+    MemoryLimit = kapps_config:get_integer(?CONFIG_CAT, <<"request_memory_limit">>),
+    handle_query_results(LoadMap, JObjs, LimitWithLast, End, MemoryLimit).
+
+handle_query_results(LoadMap, JObjs, LimitWithLast, _End, 'undefined') ->
+    process_query_results(LoadMap, JObjs, LimitWithLast);
+handle_query_results(LoadMap, JObjs, LimitWithLast, MemoryUsed, MemoryLimit) when MemoryUsed < MemoryLimit ->
+    lager:debug("under memory cap of ~p: ~p used", [MemoryLimit, MemoryUsed]),
+    process_query_results(LoadMap, JObjs, LimitWithLast);
+handle_query_results(#{context := Context}=LoadMap, _JObjs, _LimitWithLast, _TooMuch, _Limit) ->
+    lager:warning("memory used ~p exceeds limit ~p", [_TooMuch, _Limit]),
+    LoadMap#{context => crossbar_util:response_range_not_satisfiable(Context)}.
+
+process_query_results(#{databases := [Db|_]=Dbs
+                       ,context := Context
+                       ,view := View
+                       }=LoadMap
+                     ,JObjs
+                     ,LimitWithLast
+                     ) ->
+    %% catching crashes when applying users map functions (filter map)
+    %% so we can handle errors when request is chunked and chunk is already started
+    try handle_query_result(LoadMap, Dbs, JObjs, LimitWithLast)
+    catch
+        ?STACKTRACE(_E, _T, ST)
+        lager:warning("exception occurred during querying db ~s for view ~s : ~p:~p", [Db, View, _E, _T]),
+        kz_log:log_stacktrace(ST),
+        LoadMap#{context => cb_context:add_system_error('datastore_fault', Context)}
+        end.
 
 %%------------------------------------------------------------------------------
 %% @doc Apply filter to result, find last key.
@@ -823,35 +917,57 @@ get_results(#{databases := [Db|RestDbs]=Dbs
 handle_query_result(#{last_key := LastKey
                      ,mapper := Mapper
                      ,context := Context
-                     }=LoadMap, Dbs, Results, Limit) ->
+                     ,page_size := PageSize
+                     }=LoadMap
+                   ,Dbs
+                   ,Results
+                   ,Limit
+                   ) ->
     ResultsLength = erlang:length(Results),
 
-    {NewLastKey, JObjs} = last_key(LastKey, Results, Limit, ResultsLength),
+    {NewLastKey, JObjs} = last_key(LastKey, Results, Limit, ResultsLength, PageSize),
 
     case apply_filter(Mapper, JObjs) of
         {'error', Reason} ->
             LoadMap#{context => cb_context:add_system_error('datastore_fault', kz_term:to_binary(Reason), Context)};
-        FilteredJObjs ->
+        FilteredJObjs when is_list(FilteredJObjs) ->
             FilteredLength = length(FilteredJObjs),
-            lager:debug("db_returned: ~b passed_filter: ~p next_start_key: ~p", [ResultsLength, FilteredLength, NewLastKey]),
+            lager:debug("db_returned: ~b(~p) passed_filter: ~p next_start_key: ~p"
+                       ,[ResultsLength, PageSize, FilteredLength, NewLastKey]
+                       ),
             handle_query_result(LoadMap, Dbs, FilteredJObjs, FilteredLength, NewLastKey)
     end.
 
--spec handle_query_result(load_params(), kz_term:ne_binaries(), kz_json:objects(), non_neg_integer(), last_key()) -> load_params().
+-spec handle_query_result(load_params(), kz_term:ne_binaries(), kz_json:object() | kz_json:objects(), non_neg_integer(), last_key()) -> load_params().
 handle_query_result(#{is_chunked := 'true'
                      ,context := Context
-                     }=LoadMap, [Db|_], FilteredJObjs, FilteredLength, NewLastKey) ->
+                     }=LoadMap
+                   ,[Db|_]
+                   ,FilteredJObjs
+                   ,FilteredLength
+                   ,NewLastKey
+                   ) ->
     Setters = [{fun cb_context:set_resp_data/2, FilteredJObjs}
-              ,{fun cb_context:set_account_db/2, Db}
+              ,{fun cb_context:set_db_name/2, Db}
               ],
     Context1 = cb_context:setters(Context, Setters),
     LoadMap#{last_key => NewLastKey
             ,context => Context1
             ,previous_chunk_length => FilteredLength
             };
-handle_query_result(LoadMap, [_|RestDbs], FilteredJObjs, FilteredLength, NewLastKey) ->
+handle_query_result(#{page_size := _PageSize
+                     ,last_key := _OldLastKey
+                     }=LoadMap
+                   ,[_|RestDbs]
+                   ,FilteredJObjs
+                   ,FilteredLength
+                   ,NewLastKey
+                   ) ->
     case check_page_size_and_length(LoadMap, FilteredLength, FilteredJObjs, NewLastKey) of
         {'exhausted', LoadMap2} -> LoadMap2;
+        {'next_db', LoadMap2} when NewLastKey =/= 'undefined' ->
+            lager:debug("updating new last key to ~p from ~p", [NewLastKey, _OldLastKey]),
+            get_results(LoadMap2#{last_key => NewLastKey});
         {'next_db', LoadMap2} -> get_results(LoadMap2#{databases => RestDbs})
     end.
 
@@ -860,14 +976,31 @@ handle_query_result(LoadMap, [_|RestDbs], FilteredJObjs, FilteredLength, NewLast
 %% @end
 %%------------------------------------------------------------------------------
 -spec check_page_size_and_length(load_params(), non_neg_integer(), kz_json:objects(), last_key()) ->
-                                        {'exhausted' | 'next_db', load_params()}.
+          {'exhausted' | 'next_db', load_params()}.
 %% page_size is exhausted when query is limited by page_size
 %% Condition: page_size = total_queried + current_db_results
 %%            and the last key has been found.
+check_page_size_and_length(#{page_size := 'infinity'
+                            ,queried_jobjs := QueriedJObjs
+                            ,total_queried := TotalQueried
+                            }=LoadMap
+                          ,Length
+                          ,FilteredJObjs
+                          ,LastKey
+                          ) ->
+    {'next_db', LoadMap#{total_queried => TotalQueried + Length
+                        ,queried_jobjs => QueriedJObjs ++ FilteredJObjs
+                        ,last_key => LastKey
+                        }
+    };
 check_page_size_and_length(#{page_size := PageSize
                             ,queried_jobjs := QueriedJObjs
                             ,total_queried := TotalQueried
-                            }=LoadMap, Length, FilteredJObjs, LastKey)
+                            }=LoadMap
+                          ,Length
+                          ,FilteredJObjs
+                          ,LastKey
+                          )
   when is_integer(PageSize)
        andalso PageSize > 0
        andalso TotalQueried + Length == PageSize
@@ -878,10 +1011,15 @@ check_page_size_and_length(#{page_size := PageSize
                           ,last_key => LastKey
                           }
     };
+
 %% just query next_db
 check_page_size_and_length(#{total_queried := TotalQueried
                             ,queried_jobjs := QueriedJObjs
-                            }=LoadMap, Length, FilteredJObjs, LastKey) ->
+                            }=LoadMap
+                          ,Length
+                          ,FilteredJObjs
+                          ,LastKey
+                          ) ->
     {'next_db', LoadMap#{total_queried => TotalQueried + Length
                         ,queried_jobjs => QueriedJObjs ++ FilteredJObjs
                         ,last_key => LastKey
@@ -893,11 +1031,14 @@ check_page_size_and_length(#{total_queried := TotalQueried
 %% amount to satisfy page_size.
 %% @end
 %%------------------------------------------------------------------------------
--spec limit_with_last_key(boolean(), kz_term:api_pos_integer(), pos_integer(), non_neg_integer()) ->
-                                 kz_term:api_pos_integer().
+-spec limit_with_last_key(boolean(), page_size(), pos_integer(), non_neg_integer()) ->
+          kz_term:api_pos_integer().
 %% non-chunked unlimited request => no limit
 limit_with_last_key('false', 'undefined', _, _) ->
     'undefined';
+%% explicitly disabled pagination
+limit_with_last_key(_IsChunked, 'infinity', ChunkSize, _TotalQueried) ->
+    1 + ChunkSize;
 %% non-chunked limited request
 limit_with_last_key('false', PageSize, _, TotalQueried) ->
     1 + PageSize - TotalQueried;
@@ -936,10 +1077,10 @@ limit_with_last_key('true', PageSize, _ChunkSize, TotalQueried) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec apply_filter(mapper_fun(), kz_json:objects()) ->
-                          kz_json:objects() |
-                          {'error', any()}.
-apply_filter(_Mapper, []) ->
-    [];
+          kz_json:objects() |
+          kz_json:object() |
+          {'error', any()}.
+apply_filter(_Mapper, []) -> [];
 apply_filter('undefined', JObjs) ->
     lists:reverse(JObjs);
 apply_filter(Mapper, JObjs) when is_function(Mapper, 1) ->
@@ -949,8 +1090,8 @@ apply_filter(Mapper, JObjs) when is_function(Mapper, 2) ->
     filter_foldl(Mapper, JObjs, []).
 
 -spec filter_foldl(mapper_fun(), kz_json:objects(), kz_json:objects()) ->
-                          kz_json:objects() |
-                          {'error', any()}.
+          kz_json:objects() |
+          {'error', any()}.
 filter_foldl(_Mapper, [], Acc) ->
     [JObj
      || JObj <- Acc,
@@ -967,15 +1108,23 @@ filter_foldl(Mapper, [JObj | JObjs], Acc) ->
 %% exhausted yet.
 %% @end
 %%------------------------------------------------------------------------------
--spec last_key(last_key(), kz_json:objects(), non_neg_integer() | 'undefined', non_neg_integer()) ->
-                      {last_key(), kz_json:objects()}.
-last_key(LastKey, [], _, _) ->
+-spec last_key(last_key(), kz_json:objects(), non_neg_integer() | 'undefined', non_neg_integer(), page_size()) ->
+          {last_key(), kz_json:objects()}.
+last_key(LastKey, [], _Limit, _Returned, _PageSize) ->
+    lager:debug("no results same last key ~p", [LastKey]),
     {LastKey, []};
-last_key(LastKey, JObjs, 'undefined', _) ->
+last_key(LastKey, JObjs, 'undefined', _Returned, _PageSize) ->
+    lager:debug("no limit, re-using last key ~p", [LastKey]),
     {LastKey, lists:reverse(JObjs)};
-last_key(LastKey, JObjs, Limit, Returned) when Returned < Limit ->
-    {LastKey, lists:reverse(JObjs)};
-last_key(_LastKey, JObjs, Limit, Returned) when Returned == Limit ->
+last_key(_LastKey, JObjs, Limit, Limit, _PageSize) ->
+    lager:debug("full page fetched, calculating new key"),
+    new_last_key(JObjs);
+last_key(_LastKey, JObjs, _Limit, _Returned, _PageSize) ->
+    lager:debug("returned page ~p smaller than page limit ~p", [_Returned, _Limit]),
+    {'undefined', lists:reverse(JObjs)}.
+
+-spec new_last_key(kz_json:objects()) -> {last_key(), kz_json:objects()}.
+new_last_key(JObjs) ->
     [Last|JObjs1] = lists:reverse(JObjs),
     {kz_json:get_value(<<"key">>, Last), JObjs1}.
 
@@ -985,12 +1134,19 @@ last_key(_LastKey, JObjs, Limit, Returned) when Returned == Limit ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec format_response(load_params()) -> cb_context:context().
-format_response(#{total_queried := TotalQueried
-                 ,queried_jobjs := JObjs
-                 ,context := Context
-                 ,last_key := NextStartKey
-                 ,start_key := StartKey
-                 }) ->
+format_response(#{context := Context}=LoadMap) ->
+    case cb_context:resp_status(Context) of
+        'success' -> format_success_response(LoadMap);
+        _Error -> Context
+    end.
+
+-spec format_success_response(load_params()) -> cb_context:context().
+format_success_response(#{total_queried := TotalQueried
+                         ,queried_jobjs := JObjs
+                         ,context := Context
+                         ,last_key := NextStartKey
+                         ,start_key := StartKey
+                         }) ->
     Envelope = add_paging(StartKey, TotalQueried, NextStartKey, cb_context:resp_envelope(Context)),
     crossbar_doc:handle_datamgr_success(JObjs, cb_context:set_resp_envelope(Context, Envelope)).
 
@@ -1017,7 +1173,7 @@ build_general_load_params(Context, View, Options) ->
     Direction = direction(Context, Options),
     try maps:from_list(
           [{'chunk_size', get_chunk_size(Context, Options)}
-          ,{'databases', props:get_value('databases', Options, [cb_context:account_db(Context)])}
+          ,{'databases', props:get_value('databases', Options, [cb_context:db_name(Context)])}
           ,{'direction', Direction}
           ,{'is_chunked', is_chunked(Context, Options)}
           ,{'last_key', 'undefined'}
@@ -1028,7 +1184,7 @@ build_general_load_params(Context, View, Options) ->
           ,{'view', View}
           ])
     catch
-        throw:{'error', ErrorMsg} ->
+        'throw':{'error', ErrorMsg} ->
             cb_context:add_system_error(404, 'faulty_request', ErrorMsg, Context)
     end.
 
@@ -1046,7 +1202,7 @@ is_chunked(Context, Options) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec get_range_modbs(cb_context:context(), options(), direction(), kz_time:gregorian_seconds(), kz_time:gregorian_seconds()) ->
-                             kz_term:ne_binaries().
+          kz_term:ne_binaries().
 get_range_modbs(Context, Options, Direction, StartTime, EndTime) ->
     case props:get_value('databases', Options) of
         'undefined' when Direction =:= 'ascending' ->
@@ -1058,6 +1214,26 @@ get_range_modbs(Context, Options, Direction, StartTime, EndTime) ->
         Dbs when Direction =:= 'descending' ->
             lists:reverse(lists:usort(Dbs))
     end.
+
+%%------------------------------------------------------------------------------
+%% @doc Create ranged view lookup database list using start/end time and
+%% direction.
+%% @end
+%%------------------------------------------------------------------------------
+-spec get_range_yodbs(cb_context:context(), options(), direction(), kz_time:gregorian_seconds(), kz_time:gregorian_seconds()) ->
+          kz_term:ne_binaries().
+get_range_yodbs(Context, Options, Direction, StartTime, EndTime) ->
+    case props:get_value('databases', Options) of
+        'undefined' when Direction =:= 'ascending' ->
+            kazoo_yodb:get_range(cb_context:account_id(Context), StartTime, EndTime);
+        'undefined' when Direction =:= 'descending' ->
+            lists:reverse(kazoo_yodb:get_range(cb_context:account_id(Context), StartTime, EndTime));
+        Dbs when Direction =:= 'ascending' ->
+            lists:usort(Dbs);
+        Dbs when Direction =:= 'descending' ->
+            lists:reverse(lists:usort(Dbs))
+    end.
+
 
 -spec get_chunk_size(cb_context:context(), options()) -> kz_term:api_pos_integer().
 get_chunk_size(Context, Options) ->
@@ -1158,8 +1334,8 @@ map_keymap(_, _, ApiRangeKey) -> ApiRangeKey.
 get_range_key_maps(Options) ->
     case props:get_value('range_keymap', Options) of
         'undefined' ->
-            {map_range_keymap(props:get_value('range_start_keymap', Options))
-            ,map_range_keymap(props:get_value('range_end_keymap', Options))
+            {map_range_keymap(props:get_first_defined(['startkey', 'range_start_keymap'], Options))
+            ,map_range_keymap(props:get_first_defined(['endkey', 'range_end_keymap'], Options))
             };
         KeyMap -> {map_range_keymap(KeyMap), map_range_keymap(KeyMap)}
     end.

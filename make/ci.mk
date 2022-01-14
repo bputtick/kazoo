@@ -7,7 +7,6 @@ CI_CONFIG := $(CURDIR)/.circleci/config.yml
 
 ci: ci-config ci-steps
 
-
 ci-config: $(CI_VALIDATOR)
 	@$(CI_VALIDATOR) config validate -c $(CI_CONFIG) || (echo "$(CI_CONFIG):1:"; exit 1)
 
@@ -30,11 +29,11 @@ ifneq ($(PIP),)
 	@$(PIP) install --user --upgrade pip
 	@$(PIP) install --user PyYAML mkdocs pyembed-markdown jsonschema
 else
-	$(error "pip is not available, please install python2-pip package")
+	$(error "pip is not available, please install python3-pip package")
 endif
 
 ci-docs:
-	@./scripts/state-of-docs.sh || true
+	@./scripts/state-of-docs.py || true
 	@$(ROOT)/scripts/state-of-edoc.escript
 	@$(MAKE) apis
 	@$(MAKE) docs

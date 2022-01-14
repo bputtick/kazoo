@@ -1,6 +1,11 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc data adapter behaviour
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kzs_db).
@@ -20,11 +25,15 @@
         ,db_archive/3
         ,db_import/3
         ,db_list/2
+        ,system_dbs/0
         ]).
 
 -include("kz_data.hrl").
 
 -export_type([db_create_options/0]).
+
+-spec system_dbs() -> list().
+system_dbs() -> ?KZ_SYSTEM_DBS.
 
 %%% DB-related functions ---------------------------------------------
 -spec db_compact(map(), kz_term:ne_binary()) -> boolean().
@@ -93,10 +102,10 @@ do_db_delete(#{server := {App, Conn}}, DbName) ->
     App:db_delete(Conn, DbName).
 
 -spec db_replicate(map(), kz_json:object() | kz_term:proplist()) ->
-                          {'ok', kz_json:object()} |
-                          data_error().
+          {'ok', kz_json:object()} |
+          data_error().
 db_replicate(#{server := {App, Conn}}, Prop) ->
-    App:db_replicate(Conn,Prop).
+    App:db_replicate(Conn, Prop).
 
 -spec db_view_cleanup(map(), kz_term:ne_binary()) -> boolean().
 db_view_cleanup(#{}=Map, DbName) ->
@@ -202,8 +211,8 @@ db_list_all_fold({_Tag, Server}, {Options, DBs}) ->
     {Options, {'ok', lists:usort(DBs ++ DBList)}}.
 
 -spec db_view_update(map(), kz_term:ne_binary(), views_listing(), boolean()) ->
-                            boolean() |
-                            {'error', 'db_not_found'}.
+          boolean() |
+          {'error', 'db_not_found'}.
 db_view_update(#{}=Map, DbName, Views, Remove) ->
     Others = maps:get('others', Map, []),
     case do_db_view_update(Map, DbName, Views, Remove) of
@@ -219,8 +228,8 @@ db_view_update(#{}=Map, DbName, Views, Remove) ->
 
 
 -spec do_db_view_update(map(), kz_term:ne_binary(), views_listing(), boolean()) ->
-                               boolean() |
-                               {'error', 'db_not_found'}.
+          boolean() |
+          {'error', 'db_not_found'}.
 do_db_view_update(#{server := {App, Conn}}=Server, Db, NewViews, Remove) ->
     case kzs_view:all_design_docs(Server, Db, ['include_docs']) of
         {'ok', JObjs} ->

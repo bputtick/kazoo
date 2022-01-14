@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc
 %%% @author Luis Azedo
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_flow).
@@ -10,7 +15,6 @@
 -export([contains_no_match/1]).
 
 -include("doodle.hrl").
--include_lib("kazoo_stdlib/include/kazoo_json.hrl").
 
 -record(pattern, {flow_id :: kz_term:ne_binary()
                  ,has_groups :: boolean()
@@ -28,9 +32,9 @@
 
 -type lookup_ret() :: {'ok', kzd_flows:doc(), boolean()} | {'error', any()}.
 
--spec lookup(kapps_call:call()) -> lookup_ret().
-lookup(Call) ->
-    lookup(kapps_call:request_user(Call), kapps_call:account_id(Call)).
+-spec lookup(kapps_im:im()) -> lookup_ret().
+lookup(Im) ->
+    lookup(kapps_im:to(Im), kapps_im:account_id(Im)).
 
 -spec lookup(kz_term:ne_binary(), kz_term:ne_binary()) -> lookup_ret().
 lookup(Number, AccountId) when not is_binary(Number) ->
@@ -49,7 +53,7 @@ return_flow_doc(FlowId, AccountId) ->
 
 -spec return_flow_doc(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:proplist()) -> lookup_ret().
 return_flow_doc(FlowId, AccountId, Props) ->
-    Db = kz_util:format_account_db(AccountId),
+    Db = kzs_util:format_account_db(AccountId),
     case kz_datamgr:open_cache_doc(Db, FlowId) of
         {'ok', Doc} ->
             {'ok', kz_json:set_values(Props, Doc), contains_no_match(Doc)};
@@ -72,7 +76,7 @@ do_lookup(Number, AccountId) ->
 
 -spec do_lookup(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:proplist()) -> lookup_ret().
 do_lookup(Number, AccountId, ViewName, LookupOptions) ->
-    Db = kz_util:format_account_db(AccountId),
+    Db = kzs_util:format_account_db(AccountId),
     Options = [{'key', Number}, 'include_docs'],
     LookupCallflows = props:is_true('lookup_callflows', LookupOptions, 'true'),
     case kz_datamgr:get_results(Db, ViewName, Options) of
@@ -101,7 +105,7 @@ do_lookup(Number, AccountId, ViewName, LookupOptions) ->
 
 -spec cache_flow_number(kz_term:ne_binary(), kz_term:ne_binary(), kzd_callflows:doc()) -> lookup_ret().
 cache_flow_number(Number, AccountId, Flow) ->
-    AccountDb = kz_util:format_account_db(AccountId),
+    AccountDb = kzs_util:format_account_db(AccountId),
     CacheOptions = [{'origin', [{'db', AccountDb, kz_doc:type(Flow)}]}
                    ,{'expires', ?MILLISECONDS_IN_HOUR}
                    ],
@@ -133,7 +137,7 @@ fetch_patterns(AccountId)->
 
 -spec load_patterns(kz_term:ne_binary()) -> {'ok', patterns()} | {'error', 'not_found'}.
 load_patterns(AccountId) ->
-    Db = kz_util:format_account_db(AccountId),
+    Db = kzs_util:format_account_db(AccountId),
     case kz_datamgr:get_results(Db, ?MSG_LIST_BY_PATTERN, ['include_docs']) of
         {'ok', []} -> {'error', 'not_found'};
         {'ok', JObjs} -> compile_patterns(AccountId, JObjs);
@@ -167,14 +171,14 @@ compile_patterns(AccountId, [JObj | JObjs], Acc) ->
 
 -spec cache_patterns(kz_term:ne_binary(), patterns()) -> {'ok', patterns()}.
 cache_patterns(AccountId, Patterns) ->
-    AccountDb = kz_util:format_account_db(AccountId),
+    AccountDb = kzs_util:format_account_db(AccountId),
     CacheOptions = [{'origin', [{'db', AccountDb, <<"textflow">>}]}],
     kz_cache:store_local(?CACHE_NAME, ?MSG_PATTERN_CACHE_KEY(AccountId), Patterns, CacheOptions),
     {'ok', Patterns}.
 
 -spec lookup_patterns(kz_term:ne_binary(), kz_term:ne_binary()) ->
-                             {'ok', {kz_json:object(), kz_term:api_binary()}} |
-                             {'error', any()}.
+          {'ok', {kz_json:object(), kz_term:api_binary()}} |
+          {'error', any()}.
 lookup_patterns(Number, AccountId) ->
     case fetch_patterns(AccountId) of
         {'ok', Patterns} -> lookup_flow_patterns(Patterns, Number, AccountId);
@@ -212,7 +216,7 @@ test_flow_patterns(Patterns, Number) ->
     test_flow_patterns(Patterns, Number, {<<>>, 'undefined'}).
 
 -spec test_flow_patterns(patterns(), kz_term:ne_binary(), test_pattern_acc()) ->
-                                'no_match' | test_pattern_acc().
+          'no_match' | test_pattern_acc().
 test_flow_patterns([], _, {_, 'undefined'}) -> 'no_match';
 test_flow_patterns([], _, Result) -> Result;
 test_flow_patterns([#pattern{regex=Regex}=Pattern |T], Number, {Matched, P}=Result) ->

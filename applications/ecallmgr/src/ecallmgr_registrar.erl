@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc Listener for reg_success, and reg_query AMQP requests
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_registrar).
@@ -93,6 +98,7 @@
                       ,initial_registration = kz_time:now_s() :: kz_time:gregorian_seconds() | '_'
                       ,registrar_node :: kz_term:api_ne_binary() | '_'
                       ,registrar_hostname :: kz_term:api_ne_binary() | '_'
+                      ,registrar_zone :: atom() | '_'
                       ,suppress_unregister = 'true' :: boolean() | '_'
                       ,register_overwrite_notify = 'false' :: boolean() | '_'
                       ,account_db :: kz_term:api_binary() | '_'
@@ -140,14 +146,14 @@ start_link() ->
 -spec handle_reg_success(kz_json:object(), kz_term:proplist()) -> 'ok'.
 handle_reg_success(JObj, _Props) ->
     'true' = kapi_registration:success_v(JObj),
-    _ = kz_util:put_callid(JObj),
+    _ = kz_log:put_callid(JObj),
     Registration = create_registration(JObj),
     insert_registration(Registration).
 
 -spec handle_reg_query(kz_json:object(), kz_term:proplist()) -> 'ok'.
 handle_reg_query(JObj, Props) ->
     'true' = kapi_registration:query_req_v(JObj),
-    _ = kz_util:put_callid(JObj),
+    _ = kz_log:put_callid(JObj),
     maybe_resp_to_query(JObj, props:get_value('registrar_age', Props)).
 
 -spec handle_reg_flush(kz_json:object(), kz_term:proplist()) -> 'ok'.
@@ -162,7 +168,7 @@ handle_reg_flush(JObj, _Props) ->
 
 -spec handle_fs_reg(atom(), kzd_freeswitch:data()) -> 'ok'.
 handle_fs_reg(Node, FSJObj) ->
-    kz_util:put_callid(kzd_freeswitch:call_id(FSJObj)),
+    kz_log:put_callid(kzd_freeswitch:call_id(FSJObj)),
 
     Req = lists:foldl(fun(<<"Contact">>=K, Acc) ->
                               [{K, get_fs_contact(FSJObj)} | Acc];
@@ -184,8 +190,8 @@ handle_fs_reg(Node, FSJObj) ->
     kz_amqp_worker:cast(Req, fun kapi_registration:publish_success/1).
 
 -spec lookup_proxy_path(kz_term:ne_binary(), kz_term:ne_binary()) ->
-                               {'ok', kz_term:api_ne_binary(), kz_term:proplist()} |
-                               {'error', 'not_found'}.
+          {'ok', kz_term:api_ne_binary(), kz_term:proplist()} |
+          {'error', 'not_found'}.
 lookup_proxy_path(<<>>, _Username) -> {'error', 'not_found'};
 lookup_proxy_path(_Realm, <<>>) -> {'error', 'not_found'};
 lookup_proxy_path(<<_/binary>> = Realm, <<_/binary>> = Username) ->
@@ -202,8 +208,8 @@ lookup_proxy_path(<<_/binary>> = Realm, <<_/binary>> = Username) ->
     end.
 
 -spec lookup_contact(kz_term:ne_binary(), kz_term:ne_binary()) ->
-                            {'ok', kz_term:ne_binary(), kz_term:proplist()} |
-                            {'error', 'not_found'}.
+          {'ok', kz_term:ne_binary(), kz_term:proplist()} |
+          {'error', 'not_found'}.
 lookup_contact(<<>>, _Username) -> {'error', 'not_found'};
 lookup_contact(_Realm, <<>>) -> {'error', 'not_found'};
 lookup_contact(<<_/binary>> = Realm, <<_/binary>> = Username) ->
@@ -230,7 +236,11 @@ contact_vars(Props) ->
 -spec contact_vars_fold({kz_term:ne_binary(), term()}, kz_term:proplist()) -> kz_term:proplist().
 contact_vars_fold({<<"Proxy-Protocol">>, Proto}, Props) ->
     case kz_term:to_lower_binary(Proto) of
-        <<"ws", _/binary>> -> [{<<"Media-Webrtc">>, true} | Props];
+        <<"ws", _/binary>> ->
+            [{<<"Media-Webrtc">>, 'true'}
+            ,{<<"RTCP-MUX">>, 'true'}
+             | Props
+            ];
         _ -> Props
     end;
 contact_vars_fold({<<"Original-Contact">>, Contact}, Props) ->
@@ -242,8 +252,8 @@ contact_vars_fold({<<"Original-Contact">>, Contact}, Props) ->
 contact_vars_fold(_ , Props) -> Props.
 
 -spec lookup_original_contact(kz_term:ne_binary(), kz_term:ne_binary()) ->
-                                     {'ok', kz_term:ne_binary()} |
-                                     {'error', 'not_found'}.
+          {'ok', kz_term:ne_binary()} |
+          {'error', 'not_found'}.
 lookup_original_contact(Realm, Username) ->
     case kz_term:is_empty(Realm)
         orelse kz_term:is_empty(Username)
@@ -261,8 +271,8 @@ lookup_original_contact(Realm, Username) ->
     end.
 
 -spec lookup_registration(kz_term:ne_binary(), kz_term:ne_binary()) ->
-                                 {'ok', kz_json:object()} |
-                                 {'error', 'not_found'}.
+          {'ok', kz_json:object()} |
+          {'error', 'not_found'}.
 lookup_registration(Realm, Username) ->
     case get_registration(Realm, Username) of
         #registration{}=Registration ->
@@ -396,7 +406,7 @@ count() -> ets:info(?MODULE, 'size').
 %%------------------------------------------------------------------------------
 -spec init([]) -> {'ok', state()}.
 init([]) ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
     process_flag('trap_exit', 'true'),
     lager:debug("starting new ecallmgr registrar"),
     _ = ets:new(?MODULE, ['set', 'protected', 'named_table', {'keypos', #registration.id}]),
@@ -422,7 +432,7 @@ handle_cast('registrar_sync', #state{queue=Q}=State) ->
     _ = kz_amqp_worker:cast(Payload, fun kapi_registration:publish_sync/1),
     {'noreply', State};
 handle_cast({'insert_registration', Registration}, State) ->
-    kz_util:put_callid(Registration#registration.call_id),
+    kz_log:put_callid(Registration#registration.call_id),
     _ = ets:insert(?MODULE, Registration#registration{initial='false'}),
     {'noreply', State};
 handle_cast({'update_registration', {Username, Realm}=Id, Props}, State) ->
@@ -435,16 +445,16 @@ handle_cast({'delete_registration'
                           }=Reg
             }
            ,State) ->
-    kz_util:put_callid(CallId),
-    _ = kz_util:spawn(fun maybe_send_deregister_notice/1, [Reg]),
+    kz_log:put_callid(CallId),
+    _ = kz_process:spawn(fun maybe_send_deregister_notice/1, [Reg]),
     ets:delete(?MODULE, Id),
     {'noreply', State};
 handle_cast('flush', State) ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
     _ = ets:delete_all_objects(?MODULE),
     {'noreply', State};
 handle_cast({'flush', Realm}, State) ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
     R = kz_term:to_lower_binary(Realm),
     MatchSpec = [{#registration{realm = '$1'
                                ,account_realm = '$2'
@@ -460,18 +470,18 @@ handle_cast({'flush', Realm}, State) ->
     ecallmgr_fs_nodes:flush(),
     {'noreply', State};
 handle_cast({'flush', Username, Realm}, State) ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
     _ = ets:delete(?MODULE, registration_id(Username, Realm)),
     {'noreply', State};
 handle_cast({'gen_listener', {'created_queue', Q}}, State) ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
     {'noreply', State#state{queue=Q}};
 handle_cast({'gen_listener',{'is_consuming', 'true'}}, #state{queue=Q}=State) ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
     kapi_registration:publish_sync(kz_api:default_headers(Q, ?APP_NAME, ?APP_VERSION)),
     {'noreply', State};
 handle_cast(_Msg, State) ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
     {'noreply', State}.
 
 %%------------------------------------------------------------------------------
@@ -480,16 +490,16 @@ handle_cast(_Msg, State) ->
 %%------------------------------------------------------------------------------
 -spec handle_info(any(), state()) -> kz_types:handle_info_ret_state(state()).
 handle_info('expire', State) ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
     _ = expire_objects(),
     _ = erlang:send_after(2 * ?MILLISECONDS_IN_SECOND, self(), 'expire'),
     {'noreply', State};
 handle_info(?REGISTER_SUCCESS_MSG(Node, Props), State) ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
-    _ = kz_util:spawn(fun handle_fs_reg/2, [Node, Props]),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    _ = kz_process:spawn(fun handle_fs_reg/2, [Node, Props]),
     {'noreply', State};
 handle_info(_Info, State) ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
     lager:debug("unhandled message: ~p", [_Info]),
     {'noreply', State}.
 
@@ -511,7 +521,7 @@ handle_event(_JObj, #state{started=Started}) ->
 %%------------------------------------------------------------------------------
 -spec terminate(any(), any()) -> 'ok'.
 terminate(_Reason, _) ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
     lager:debug("ecallmgr registrar ~p termination", [_Reason]).
 
 %%------------------------------------------------------------------------------
@@ -520,7 +530,7 @@ terminate(_Reason, _) ->
 %%------------------------------------------------------------------------------
 -spec code_change(any(), state(), any()) -> {'ok', state()}.
 code_change(_OldVsn, State, _Extra) ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
     {'ok', State}.
 
 %%%=============================================================================
@@ -558,8 +568,8 @@ insert_registration(#registration{}=Registration) ->
                 ]).
 
 -spec fetch_registration(kz_term:ne_binary(), kz_term:ne_binary()) ->
-                                {'ok', kz_json:object()} |
-                                {'error', 'not_found'}.
+          {'ok', kz_json:object()} |
+          {'error', 'not_found'}.
 fetch_registration(Username, Realm) ->
     Reg = [{<<"Username">>, Username}
           ,{<<"Realm">>, Realm}
@@ -575,8 +585,8 @@ fetch_registration(Username, Realm) ->
     end.
 
 -spec query_for_registration(kz_term:api_terms()) ->
-                                    {'ok', kz_json:objects()} |
-                                    {'error', any()}.
+          {'ok', kz_json:objects()} |
+          {'error', any()}.
 query_for_registration(Reg) ->
     kz_amqp_worker:call_collect(Reg
                                ,fun kapi_registration:publish_query_req/1
@@ -585,8 +595,8 @@ query_for_registration(Reg) ->
                                ).
 
 -spec find_newest_fetched_registration(kz_term:ne_binary(), kz_term:ne_binary(), kz_json:objects()) ->
-                                              {'ok', kz_json:object()} |
-                                              {'error', 'not_found'}.
+          {'ok', kz_json:object()} |
+          {'error', 'not_found'}.
 find_newest_fetched_registration(Username, Realm, JObjs) ->
     Registrations =
         lists:flatten(
@@ -634,8 +644,8 @@ sort_fetched_registrations(A, B) ->
         kz_json:get_integer_value(<<"Event-Timestamp">>, A).
 
 -spec fetch_contact(kz_term:ne_binary(), kz_term:ne_binary()) ->
-                           {'ok', kz_term:ne_binary()} |
-                           {'error', 'not_found'}.
+          {'ok', kz_term:ne_binary()} |
+          {'error', 'not_found'}.
 fetch_contact(Username, Realm) ->
     case fetch_registration(Username, Realm) of
         {'ok', JObj} ->
@@ -650,8 +660,8 @@ fetch_contact(Username, Realm) ->
     end.
 
 -spec fetch_original_contact(kz_term:ne_binary(), kz_term:ne_binary()) ->
-                                    {'ok', kz_term:ne_binary()} |
-                                    {'error', 'not_found'}.
+          {'ok', kz_term:ne_binary()} |
+          {'error', 'not_found'}.
 fetch_original_contact(Username, Realm) ->
     case fetch_registration(Username, Realm) of
         {'ok', JObj} ->
@@ -681,7 +691,7 @@ expire_objects() ->
 -spec expire_object(any()) -> 'ok'.
 expire_object('$end_of_table') -> 'ok';
 expire_object({[#registration{id=Id}=Reg], Continuation}) ->
-    _ = kz_util:spawn(fun maybe_send_deregister_notice/1, [Reg]),
+    _ = kz_process:spawn(fun maybe_send_deregister_notice/1, [Reg]),
     _ = ets:delete(?MODULE, Id),
     expire_object(ets:select(Continuation)).
 
@@ -827,6 +837,11 @@ create_registration(JObj) ->
                                  ,JObj
                                  ,Reg#registration.registrar_hostname
                                  ),
+    RegistrarZone =
+        kz_term:to_atom(kz_json:get_ne_binary_value(<<"AMQP-Broker-Zone">>
+                                                   ,JObj
+                                                   ,kz_nodes:local_zone()
+                                                   ), 'true'),
     augment_registration(Reg#registration{username=Username
                                          ,realm=Realm
                                          ,proxy=Proxy
@@ -836,6 +851,7 @@ create_registration(JObj) ->
                                          ,expires=Expires
                                          ,registrar_node=RegistrarNode
                                          ,registrar_hostname=RegistrarHostname
+                                         ,registrar_zone=RegistrarZone
                                          ,contact=fix_contact(OriginalContact)
                                          ,original_contact=OriginalContact
                                          ,bridge_uri=bridge_uri(OriginalContact, Proxy, Username, Realm)
@@ -889,7 +905,7 @@ augment_registration(Reg, JObj) ->
                       ,Reg#registration.register_overwrite_notify
                       )
          ),
-    AccountDb = kz_util:format_account_db(AccountId),
+    AccountDb = kzs_util:format_account_db(AccountId),
     Reg#registration{account_id=AccountId
                     ,account_db=AccountDb
                     ,suppress_unregister=SuppressUnregister
@@ -1051,7 +1067,7 @@ update_from_authn_response(#registration{username=Username
                           ,JObj) ->
     CCVs = kz_json:get_json_value(<<"Custom-Channel-Vars">>, JObj, kz_json:new()),
     AccountId = kz_json:get_value(<<"Account-ID">>, CCVs),
-    AccountDb = kz_util:format_account_id(AccountId, 'encoded'),
+    AccountDb = kzs_util:format_account_db(AccountId),
     AuthorizingId = kz_json:get_value(<<"Authorizing-ID">>, CCVs),
     OwnerIdProp =
         case kz_json:get_value(<<"Owner-ID">>, CCVs) of
@@ -1105,8 +1121,9 @@ update_registration(#registration{authorizing_id=AuthorizingId
 -spec maybe_send_register_notice(registration()) -> registration().
 maybe_send_register_notice(#registration{username=Username
                                         ,realm=Realm
+                                        ,registrar_zone=Zone
                                         }=Reg) ->
-    case oldest_registrar() of
+    case should_handle_reg_notice(Zone) of
         'false' -> Reg;
         'true' ->
             lager:debug("sending register notice for ~s@~s", [Username, Realm]),
@@ -1126,14 +1143,15 @@ maybe_send_deregister_notice(#registration{username=Username
                                           ,suppress_unregister='true'
                                           ,call_id=CallId
                                           }) ->
-    kz_util:put_callid(CallId),
+    kz_log:put_callid(CallId),
     lager:debug("registration ~s@~s expired", [Username, Realm]);
 maybe_send_deregister_notice(#registration{username=Username
                                           ,realm=Realm
                                           ,call_id=CallId
+                                          ,registrar_zone=Zone
                                           }=Reg) ->
-    kz_util:put_callid(CallId),
-    case oldest_registrar() of
+    kz_log:put_callid(CallId),
+    case should_handle_reg_notice(Zone) of
         'false' -> 'ok';
         'true' ->
             lager:debug("sending deregister notice for ~s@~s", [Username, Realm]),
@@ -1217,10 +1235,21 @@ to_props(Reg) ->
       ]
      ).
 
--spec oldest_registrar() -> boolean().
-oldest_registrar() ->
+-spec should_handle_reg_notice(atom()) -> boolean().
+should_handle_reg_notice(Zone) ->
+    (kz_nodes:local_zone() =:= Zone
+     andalso oldest_registrar('false'))
+        orelse (no_registrar_in_reg_zone(Zone)
+                andalso oldest_registrar('true')).
+
+-spec no_registrar_in_reg_zone(atom()) -> boolean().
+no_registrar_in_reg_zone(Zone) ->
+    kz_nodes:whapp_oldest_node(?APP_NAME, Zone) =:= 'undefined'.
+
+-spec oldest_registrar(boolean()) -> boolean().
+oldest_registrar(Federated) ->
     kz_nodes:whapp_zone_count(?APP_NAME) =:= 1
-        orelse kz_nodes:whapp_oldest_node(?APP_NAME, 'true') =:= node().
+        orelse kz_nodes:whapp_oldest_node(?APP_NAME, Federated) =:= node().
 
 -spec get_fs_contact(kzd_freeswitch:data()) -> kz_term:ne_binary().
 get_fs_contact(FSJObj) ->

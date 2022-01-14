@@ -1,11 +1,16 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc Various utilities specific to ecallmgr. More general utilities go
 %%% in kazoo_util.erl
 %%%
 %%%
 %%% @author James Aimonetti <james@2600hz.org>
 %%% @author Karl Anderson <karl@2600hz.org>
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_util).
@@ -29,12 +34,14 @@
 
 -export([eventstr_to_proplist/1, varstr_to_proplist/1, get_setting/1, get_setting/2]).
 -export([is_node_up/1, is_node_up/2]).
--export([build_bridge_string/1, build_bridge_string/2, build_bridge_string/3]).
+-export([build_bridge_string/1, build_bridge_string/2]).
 -export([build_channel/1]).
 -export([build_bridge_channels/1, build_simple_channels/1]).
 -export([create_masquerade_event/2, create_masquerade_event/3]).
 -export([media_path/1, media_path/2, media_path/3, media_path/4
+        ,moh_media_path/4
         ,lookup_media/4
+        ,request_media_url/4
         ]).
 -export([unserialize_fs_array/1, unserialize_fs_props/1]).
 -export([convert_fs_evt_name/1, convert_kazoo_app_name/1]).
@@ -51,6 +58,13 @@
 
 -export([dialplan_application/1]).
 
+-ifdef(TEST).
+-export([endpoint_jobjs_to_records/1
+        ,maybe_filter_failover_channels/2
+        ,build_bridge_channels/2
+        ]).
+-endif.
+
 -include("ecallmgr.hrl").
 -include_lib("kazoo_amqp/src/api/kapi_dialplan.hrl").
 -include_lib("kazoo_stdlib/include/kz_databases.hrl").
@@ -58,8 +72,16 @@
 
 -define(FS_MULTI_VAR_SEP, kapps_config:get_ne_binary(?APP_NAME, <<"multivar_separator">>, <<"~">>)).
 -define(FS_MULTI_VAR_SEP_PREFIX, "^^").
--define(SANITIZE_FS_VALUE_REGEX,
-        kapps_config:get_ne_binary(?APP_NAME, <<"sanitize_fs_value_regex">>, <<"[^0-9\\w\\s-]">>)).
+-define(SANITIZE_FS_VALUE_REGEX
+       ,kapps_config:get_ne_binary(?APP_NAME, <<"sanitize_fs_value_regex">>, <<"[^0-9\\w\\s-]">>)
+       ).
+-define(FAILOVER_IF_ALL_UNREGED
+       ,kapps_config:get_boolean(?APP_NAME, <<"failover_when_all_unreg">>, 'false')
+       ).
+
+-define(KZ_MOH_KEY, <<"Hold-Media-Preserve-Position">>).
+-define(KZ_MOH_CONFIG_KEY, kz_json:normalize_key(?KZ_MOH_KEY)).
+-define(KZ_MOH_DEFAULT, kapps_config:get_boolean(?APP_NAME, ?KZ_MOH_CONFIG_KEY, 'true')).
 
 -type send_cmd_ret() :: fs_sendmsg_ret() | fs_api_ret().
 -export_type([send_cmd_ret/0]).
@@ -82,7 +104,10 @@
                          ,channel_vars = [] :: kz_term:ne_binaries()
                          ,header_vars = [] :: kz_term:ne_binaries()
                          ,include_channel_vars = 'true' :: boolean()
-                         ,failover
+                         ,failover :: kz_term:api_object()
+                         ,account_id
+                         ,endpoint_id
+                         ,endpoint_uri
                          }).
 -type bridge_endpoint() :: #bridge_endpoint{}.
 
@@ -97,19 +122,6 @@ send_cmd(Node, UUID, App, Args) ->
 -spec send_cmd(atom(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:text(), kz_term:text()) -> send_cmd_ret().
 send_cmd(Node, UUID, App, FSApp, Args) when not is_list(FSApp) ->
     send_cmd(Node, UUID, App, kz_term:to_list(FSApp), Args);
-send_cmd(Node, UUID, App, "xferext", Dialplan) ->
-    XferExt = [begin
-                   lager:debug("building xferext on node ~s: ~s", [Node, V]),
-                   {kz_term:to_list(K), kz_term:to_list(V)}
-               end
-               || {K, V} <- Dialplan,
-                  not cmd_is_empty({kz_term:to_list(K), kz_term:to_list(V)})
-              ],
-    Result = freeswitch:sendmsg(Node, UUID, [{"call-command", "xferext"} | XferExt]),
-    lager:debug("xfer execute result on node ~s(~s)  ~s : ~p"
-               ,[Node, UUID, App, Result]
-               ),
-    Result;
 send_cmd(Node, UUID, App, FSApp, Args) when not is_list(Args) ->
     send_cmd(Node, UUID, App, FSApp, kz_term:to_list(Args));
 send_cmd(_Node, _UUID, _App, "kz_multiset_encoded", "^^") -> 'ok';
@@ -156,6 +168,25 @@ send_cmd(Node, UUID, App, FSApp, Args) ->
     send_cmd(Node, UUID, App, FSApp, Args, []).
 
 -spec send_cmd(atom(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:text(), kz_term:text(), kz_term:proplist()) -> send_cmd_ret().
+send_cmd(Node, UUID, <<"bridge">> = App, <<"xferext">>, Dialplan, Args) ->
+    XferExt = [begin
+                   lager:debug("building xferext on node ~s: ~s", [Node, V]),
+                   {kz_term:to_list(K), kz_term:to_list(V)}
+               end
+               || {K, V} <- Dialplan,
+                  not cmd_is_empty({kz_term:to_list(K), kz_term:to_list(V)})
+              ],
+    AppUUID = props:get_binary_value(<<"Application-UUID">>, Args, kz_binary:rand_hex(16)),
+    Result = freeswitch:sendmsg(Node, UUID, [{"call-command", "xferext"} | XferExt]),
+
+    lager:debug("xfer execute result on node ~s(~s)  ~s : ~p : ~p"
+               ,[Node, UUID, App, Result, AppUUID]
+               ),
+    case Result of
+        ok -> {ok, AppUUID};
+        _Else -> Result
+    end;
+
 send_cmd(Node, UUID, App, FSApp, Args, EventArgs) ->
     AppName = dialplan_application(FSApp),
     Result = freeswitch:cmd(Node, UUID, [{<<"call-command">>, <<"execute">>}
@@ -202,8 +233,6 @@ dialplan_application(App)
   when is_list(App) ->
     dialplan_application(kz_term:to_binary(App));
 dialplan_application(<<"blind_xfer">>) -> <<"transfer">>;
-dialplan_application(<<"kz_multiset">>) -> <<"kz_multiset_encoded">>;
-dialplan_application(<<"kz_export">>) -> <<"kz_export_encoded">>;
 dialplan_application(<<"att_xfer">>) -> <<"kz_att_xfer">>;
 dialplan_application(App) -> App.
 
@@ -319,7 +348,7 @@ custom_application_vars_fold(?GET_JSON_CAV(Key), V, Acc) ->
 custom_application_vars_fold(_K, _V, Acc) -> Acc.
 
 -spec application_var_map({kz_term:ne_binary(), kz_term:ne_binary()}) ->
-                                 {kz_term:ne_binary(), kz_term:ne_binary() | kz_term:ne_binaries()}.
+          {kz_term:ne_binary(), kz_term:ne_binary() | kz_term:ne_binaries()}.
 application_var_map({Key, <<"ARRAY::", Serialized/binary>>}) ->
     {Key, binary:split(Serialized, <<"|:">>, ['global'])};
 application_var_map({Key, Other}) -> {Key, Other}.
@@ -424,15 +453,15 @@ fs_args_to_binary(Args, Sep, Prefix) ->
     Bins = [list_to_binary([Sep, Arg]) || Arg <- Args],
     list_to_binary([Prefix, Bins]).
 
--spec fs_arg_encode(kz_term:ne_binary()) -> kz_term:ne_binary().
-fs_arg_encode(Source = ?NE_BINARY) ->
+-spec fs_arg_encode(binary()) -> kz_term:ne_binary().
+fs_arg_encode(<<Source/binary>>) ->
     fs_arg_encode(Source, <<>>, <<>>).
 
--spec fs_arg_encode(kz_term:ne_binary(), binary()) -> kz_term:ne_binary().
-fs_arg_encode(Source = ?NE_BINARY, Sep) ->
+-spec fs_arg_encode(binary(), byte() | binary()) -> kz_term:ne_binary().
+fs_arg_encode(<<Source/binary>>, Sep) ->
     fs_arg_encode(Source, Sep, <<>>).
 
--spec fs_arg_encode(binary(), binary() | byte(), binary()) -> binary().
+-spec fs_arg_encode(binary(), byte() | binary(), binary()) -> binary().
 fs_arg_encode(<<>>, _Sep, Acc) -> Acc;
 
 fs_arg_encode(<<C, R/binary>>, C, Acc) ->
@@ -513,9 +542,8 @@ get_fs_kv(Key, Value) ->
 
 -spec get_fs_kv(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:api_binary()) -> binary().
 get_fs_kv(<<"Hold-Media">>, Media, UUID) ->
-    list_to_binary(["hold_music="
-                   ,kz_term:to_list(media_path(Media, 'extant', UUID, kz_json:new()))
-                   ]);
+    MediaPath = moh_media_path(Media, 'extant', UUID, kz_json:new()),
+    list_to_binary(["hold_music=", MediaPath]);
 get_fs_kv(?CCV(Key), Val, UUID) ->
     get_fs_kv(Key, Val, UUID);
 get_fs_kv(Key, Val, _) ->
@@ -526,6 +554,10 @@ get_fs_key(?CCV(Key)) -> get_fs_key(Key);
 get_fs_key(?CAV(_)=CAV) -> CAV;
 get_fs_key(?JSON_CAV(_)=JSONCAV) -> JSONCAV;
 get_fs_key(<<"X-", _/binary>>=Key) -> <<"sip_h_", Key/binary>>;
+
+get_fs_key(<<?CHANNEL_LOOPBACK_HEADER_PREFIX, K/binary>>) ->
+    <<?CHANNEL_LOOPBACK_HEADER_PREFIX, (get_fs_key(K))/binary>>;
+
 get_fs_key(Key) ->
     case lists:keyfind(Key, 1, ?SPECIAL_CHANNEL_VARS) of
         'false' -> ?CCV(Key);
@@ -536,11 +568,12 @@ get_fs_key(Key) ->
                           ,kz_term:ne_binary() | kz_term:ne_binaries() | kz_json:object()
                           ,kz_term:ne_binary()
                           ) ->
-                                  {kz_term:ne_binary(), binary()} |
-                                  [{kz_term:ne_binary(), binary()}] |
-                                  'skip'.
+          {kz_term:ne_binary(), binary()} |
+          [{kz_term:ne_binary(), binary()}] |
+          'skip'.
 get_fs_key_and_value(<<"Hold-Media">>=Key, Media, UUID) ->
-    {get_fs_key(Key), media_path(Media, 'extant', UUID, kz_json:new())};
+    MediaPath = moh_media_path(Media, 'extant', UUID, kz_json:new()),
+    {get_fs_key(Key), MediaPath};
 get_fs_key_and_value(<<"Diversions">>=Key, Diversions, _UUID) ->
     K = get_fs_key(Key),
     lager:debug("setting diversions ~p on the channel", [Diversions]),
@@ -589,6 +622,10 @@ maybe_sanitize_fs_value(<<"Export-Bridge-Variables">>, Val) ->
     kz_binary:join(Val, <<",">>);
 maybe_sanitize_fs_value(<<"Export-Variables">>, Val) ->
     kz_binary:join(Val, <<",">>);
+maybe_sanitize_fs_value(<<"Require-Fail-On-Single-Reject">>, <<Val/binary>>) ->
+    Val;
+maybe_sanitize_fs_value(<<"Require-Fail-On-Single-Reject">>, Val) when is_list(Val) ->
+    kz_binary:join(Val, <<",">>);
 maybe_sanitize_fs_value(Key, Val) when not is_binary(Key) ->
     maybe_sanitize_fs_value(kz_term:to_binary(Key), Val);
 maybe_sanitize_fs_value(Key, Val) when not is_binary(Val) ->
@@ -613,11 +650,6 @@ maybe_sanitize_fs_value(_, Val) -> Val.
 build_bridge_string(Endpoints) ->
     build_bridge_string(Endpoints, ?SEPARATOR_SINGLE).
 
--spec build_bridge_string(kz_json:objects(), kz_term:ne_binary()) -> kz_term:ne_binary().
-build_bridge_string(Endpoints, Separator) ->
-    %% HELP-34627: Only handle failover when all endpoints are unregistered.
-    build_bridge_string(Endpoints, Separator, kapps_config:get_boolean(?APP_NAME, <<"failover_when_all_unreg">>, 'false')).
-
 %%------------------------------------------------------------------------------
 %% @doc De-dupe the bridge strings by matching those with the same
 %% Invite-Format, To-IP, To-User, To-realm, To-DID, and Route.
@@ -625,38 +657,12 @@ build_bridge_string(Endpoints, Separator) ->
 %% NOTE: don't use binary_join here as it will crash on an empty list...
 %% @end
 %%------------------------------------------------------------------------------
--spec build_bridge_string(kz_json:objects(), kz_term:ne_binary(), kz_term:api_boolean()) ->
-                                 kz_term:ne_binary().
-build_bridge_string(Endpoints, Separator, 'true') ->
-    %% HELP-34627: Only handle failover when all endpoints are unregistered.
-    %% Additionally split bridge strings out and only return failover endpoints
-    %% if no devices registered.
-    lager:info("ecallmgr 'failover_when_all_unreg' is enabled."),
-
-    %% NOTE: because we want to de-dup failover endpoints with same destination
-    %% it is important to pass bridge strings in intial order to {@link failover_if_all_unregistered/1}
-    %% function so only the first duplicated endpoint will ne used.
-    %% e.g:
-    %%
-    %% ```
-    %% [^^!ecallmgr_Authorizing_ID='forward_1']loopback/forward_1/context_2
-    %% [^^!ecallmgr_Authorizing_ID='forward_2']loopback/forward_1/context_2
-    %% [^^!ecallmgr_Authorizing_ID='forward_3']loopback/another_forward_destination/context_2
-    %% '''
-    %%
-    %% would be translate to:
-    %%
-    %% ```
-    %% [^^!ecallmgr_Authorizing_ID='forward_1']loopback/forward_1/context_2
-    %% [^^!ecallmgr_Authorizing_ID='forward_3']loopback/another_forward_destination/context_2
-    %% '''
-    BridgeChannels = failover_if_all_unregistered(lists:reverse(build_bridge_channels(Endpoints))),
-    kz_binary:join(lists:reverse(BridgeChannels), Separator);
-build_bridge_string(Endpoints, Separator, _DefaultFailover) ->
+-spec build_bridge_string(kz_json:objects(), kz_term:ne_binary()) -> kz_term:ne_binary().
+build_bridge_string(Endpoints, Separator) ->
     BridgeChannels = build_bridge_channels(Endpoints),
     kz_binary:join(lists:reverse(BridgeChannels), Separator).
 
--spec failover_if_all_unregistered(bridge_channels()) -> bridge_channels().
+-spec failover_if_all_unregistered(bridge_endpoints()) -> bridge_endpoints().
 failover_if_all_unregistered(Endpoints) ->
     case classify_endpoints(Endpoints) of
         {[], Failover} ->
@@ -667,47 +673,60 @@ failover_if_all_unregistered(Endpoints) ->
             Devices
     end.
 
--spec classify_endpoints(bridge_channels()) -> {bridge_channels(), bridge_channels()}.
+-spec classify_endpoints(bridge_endpoints()) -> {bridge_endpoints(), bridge_endpoints()}.
 classify_endpoints(Endpoints) ->
-    classify_endpoints(Endpoints, [], []).
+    lists:foldl(fun classify_endpoint/2, {[], []}, Endpoints).
 
--spec classify_endpoints(bridge_channels(), bridge_channels(), bridge_channels()) -> {bridge_channels(), bridge_channels()}.
-classify_endpoints([], Devices, Failovers) ->
-    {Devices, Failovers};
-classify_endpoints([Endpoint | Endpoints], Devices, Failovers) ->
-    case binary:match(Endpoint, <<"ecallmgr_Call-Forward='true'">>) of
-        'nomatch' ->
-            %% Not a forwarding endpoint move along.
-            classify_endpoints(Endpoints, [Endpoint | Devices], Failovers);
-        _ ->
-            %% Determine if we should add the call forwarding route.
-            classify_endpoints(Endpoints, Devices, maybe_use_fwd_endpoint(Endpoint, Failovers))
+-spec classify_endpoint(bridge_endpoint(), {bridge_endpoints(), bridge_endpoints()}) -> {bridge_endpoints(), bridge_endpoints()}.
+classify_endpoint(#bridge_endpoint{channel_vars=CVs
+                                  ,failover=EndpointFailover
+                                  }=Endpoint
+                 ,{Devices, Failovers}
+                 ) ->
+    IsFailoverEndpoint = lists:member(<<?CHANNEL_VAR_PREFIX, "Is-Failover='true'">>, CVs),
+    IsRegistered = is_registered(Endpoint),
+
+    case IsFailoverEndpoint of
+        'true' ->
+            lager:info("endpoint is a failover endpoint"),
+            {Devices, maybe_use_fwd_endpoint(Endpoint, Failovers)};
+        'false' when IsRegistered ->
+            lager:info("endpoint is an endpoint"),
+            {[Endpoint | Devices], Failovers};
+        'false' when EndpointFailover =:= 'undefined' ->
+            lager:info("endpoint is not failover nor registered, removing"),
+            {Devices, Failovers};
+        'false' ->
+            lager:info("endpoint is not registered but has failover route defined"),
+            maybe_add_failover_route(EndpointFailover, {Devices, Failovers})
     end.
 
--spec maybe_use_fwd_endpoint(bridge_channel(), bridge_channels()) -> bridge_channels().
-maybe_use_fwd_endpoint(Endpoint, Failovers) ->
-    maybe_use_fwd_endpoint(Endpoint, Failovers, get_loopback_number(Endpoint)).
+maybe_add_failover_route(EndpointFailover, {Devices, Failovers}) ->
+    Endpoint = endpoint_jobj_to_record(EndpointFailover),
+    {Devices, maybe_use_fwd_endpoint(Endpoint, Failovers)}.
 
--spec maybe_use_fwd_endpoint(bridge_channel(), bridge_channels(), kz_term:api_ne_binary()) -> bridge_channels().
-maybe_use_fwd_endpoint(Endpoint, Failovers, 'undefined') ->
-    [Endpoint | Failovers];
-maybe_use_fwd_endpoint(Endpoint, Failovers, ForwardDestination) ->
-    case match_forward_destination_to_failover(Failovers, ForwardDestination) of
-        [] -> [Endpoint | Failovers];
-        _Matched -> Failovers
+-spec is_registered(bridge_endpoint()) -> boolean().
+is_registered(Endpoint) ->
+    try get_sip_contact(Endpoint) of
+        _ -> 'true'
+    catch
+        'error':'badarg' -> 'false';
+        'error':{'badmatch',{'error', 'not_found'}} -> 'false'
     end.
 
-match_forward_destination_to_failover(Failovers, ForwardDestination) ->
-    [Failover || Failover <- Failovers,
-                 binary:match(Failover, ForwardDestination) =/= 'nomatch'
-    ].
-
--spec get_loopback_number(bridge_channel()) -> kz_term:api_ne_binary().
-get_loopback_number(Endpoint) ->
-    case binary:match(Endpoint, <<"loopback/">>) of
-        'nomatch' -> 'undefined';
-        {Pos, _Length} ->
-            binary:part(Endpoint, Pos, size(Endpoint) - Pos)
+-spec maybe_use_fwd_endpoint(bridge_endpoint(), bridge_endpoints()) -> bridge_endpoints().
+maybe_use_fwd_endpoint(#bridge_endpoint{invite_format = <<"loopback">>
+                                       ,route=ForwardDestination
+                                       }=Endpoint
+                      ,Failovers
+                      ) ->
+    case lists:keyfind(ForwardDestination, #bridge_endpoint.route, Failovers) of
+        'false' ->
+            lager:info("adding failover endpoint (to ~s)", [ForwardDestination]),
+            [Endpoint| Failovers];
+        _EP ->
+            lager:info("skipping endpoint with existing destination ~s", [ForwardDestination]),
+            Failovers
     end.
 
 -spec endpoint_jobjs_to_records(kz_json:objects()) -> bridge_endpoints().
@@ -748,6 +767,7 @@ endpoint_key(Endpoint) ->
     ,kz_json:get_value(<<"Route">>, Endpoint)
     ,kz_json:get_value(<<"Proxy-Zone">>, Endpoint)
     ,kz_json:get_value(<<"Proxy-IP">>, Endpoint)
+    ,kz_json:get_value(<<"Endpoint-ID">>, Endpoint)
     ].
 
 -spec endpoint_jobj_to_record(kz_json:object()) -> bridge_endpoint().
@@ -773,7 +793,10 @@ endpoint_jobj_to_record(Endpoint, IncludeVars) ->
                              ,interface = get_endpoint_interface(Endpoint)
                              ,sip_interface = kz_json:get_ne_value(<<"SIP-Interface">>, Endpoint)
                              ,include_channel_vars = IncludeVars
-                             ,failover = kz_json:get_value(<<"Failover">>, Endpoint)
+                             ,failover = kz_json:get_json_value(<<"Failover">>, Endpoint)
+                             ,account_id = kz_json:get_value(<<"Account-ID">>, Endpoint)
+                             ,endpoint_id = kz_json:get_value(<<"Endpoint-ID">>, Endpoint)
+                             ,endpoint_uri = kz_json:get_value(<<"Endpoint-URI">>, Endpoint)
                              },
     endpoint_jobj_to_record_vars(Endpoint, Bridge).
 
@@ -815,7 +838,21 @@ build_simple_channels(Endpoints) ->
 build_bridge_channels(Endpoints) ->
     CWEP = maybe_apply_call_waiting(Endpoints),
     EPs = endpoint_jobjs_to_records(CWEP),
-    build_bridge_channels(EPs, []).
+    FilteredEPs = maybe_filter_failover_channels(EPs, ?FAILOVER_IF_ALL_UNREGED),
+    build_bridge_channels(FilteredEPs, []).
+
+%% HELP-34627: Only handle failover when all endpoints are unregistered.
+%% Additionally split bridge strings out and only return failover endpoints
+%% if no devices registered.
+-spec maybe_filter_failover_channels(bridge_endpoints(), boolean()) -> bridge_endpoints().
+maybe_filter_failover_channels(Channels, 'false') -> Channels;
+maybe_filter_failover_channels(Channels, 'true') ->
+    lager:info("ecallmgr 'failover_when_all_unreg' is enabled."),
+
+    %% NOTE: because we want to de-dup failover endpoints with the same destination
+    %% it is important to pass bridge strings in intial order to {@link failover_if_all_unregistered/1}
+    %% function so only the first duplicated endpoint will ne used.
+    failover_if_all_unregistered(lists:reverse(Channels)).
 
 -spec maybe_apply_call_waiting(kz_json:objects()) -> kz_json:objects().
 maybe_apply_call_waiting(Endpoints) ->
@@ -856,7 +893,7 @@ build_bridge_channels([#bridge_endpoint{invite_format = <<"loopback">>}=Endpoint
 %% If this does not have an explicit sip route and we have no ip address, lookup the registration
 build_bridge_channels([#bridge_endpoint{ip_address='undefined'}=Endpoint|Endpoints], Channels) ->
     S = self(),
-    Pid = kz_util:spawn(fun() -> S ! {self(), build_channel(Endpoint)} end),
+    Pid = kz_process:spawn(fun() -> S ! {self(), build_channel(Endpoint)} end),
     build_bridge_channels(Endpoints, [{'worker', Pid}|Channels]);
 %% If we have been given a IP to route to then do that now
 build_bridge_channels([Endpoint|Endpoints], Channels) ->
@@ -884,8 +921,8 @@ maybe_collect_worker_channel(Pid, Channels) ->
     end.
 
 -spec build_channel(bridge_endpoint() | kz_json:object()) ->
-                           {'ok', bridge_channel()} |
-                           {'error', any()}.
+          {'ok', bridge_channel()} |
+          {'error', 'invalid' | 'number_not_provided'}.
 build_channel(#bridge_endpoint{endpoint_type = <<"freetdm">>}=Endpoint) ->
     build_freetdm_channel(Endpoint);
 build_channel(#bridge_endpoint{endpoint_type = <<"skype">>}=Endpoint) ->
@@ -896,8 +933,8 @@ build_channel(EndpointJObj) ->
     build_channel(endpoint_jobj_to_record(EndpointJObj)).
 
 -spec build_freetdm_channel(bridge_endpoint()) ->
-                                   {'ok', bridge_channel()} |
-                                   {'error', 'number_not_provided'}.
+          {'ok', bridge_channel()} |
+          {'error', 'number_not_provided'}.
 build_freetdm_channel(#bridge_endpoint{number='undefined'}) ->
     {'error', 'number_not_provided'};
 build_freetdm_channel(#bridge_endpoint{invite_format = <<"e164">>
@@ -918,6 +955,12 @@ build_freetdm_channel(#bridge_endpoint{invite_format = <<"1npan">>
                                       ,channel_selection=ChannelSelection
                                       }) ->
     {'ok', <<"freetdm/", Span/binary, "/", ChannelSelection/binary, "/", (knm_converters:to_1npan(Number))/binary>>};
+build_freetdm_channel(#bridge_endpoint{invite_format = <<"strip_plus">>
+                                      ,number=Number
+                                      ,span=Span
+                                      ,channel_selection=ChannelSelection
+                                      }) ->
+    {'ok', <<"freetdm/", Span/binary, "/", ChannelSelection/binary, "/", (knm_converters:to_strip_plus(Number))/binary>>};
 build_freetdm_channel(#bridge_endpoint{number=Number
                                       ,span=Span
                                       ,channel_selection=ChannelSelection
@@ -925,16 +968,16 @@ build_freetdm_channel(#bridge_endpoint{number=Number
     {'ok', <<"freetdm/", Span/binary, "/", ChannelSelection/binary, "/", Number/binary>>}.
 
 -spec build_skype_channel(bridge_endpoint()) ->
-                                 {'ok', bridge_channel()} |
-                                 {'error', 'number_not_provided'}.
+          {'ok', bridge_channel()} |
+          {'error', 'number_not_provided'}.
 build_skype_channel(#bridge_endpoint{user='undefined'}) ->
     {'error', 'number_not_provided'};
 build_skype_channel(#bridge_endpoint{user=User, interface=IFace}) ->
     {'ok', <<"skypopen/", IFace/binary, "/", User/binary>>}.
 
 -spec build_sip_channel(bridge_endpoint()) ->
-                               {'ok', bridge_channel()} |
-                               {'error', any()}.
+          {'ok', bridge_channel()} |
+          {'error', 'invalid'}.
 build_sip_channel(#bridge_endpoint{failover=Failover}=Endpoint) ->
     Routines = [fun get_sip_contact/1
                ,fun maybe_clean_contact/2
@@ -949,11 +992,11 @@ build_sip_channel(#bridge_endpoint{failover=Failover}=Endpoint) ->
         {Channel, _} -> {'ok', Channel}
     catch
         _E:{'badmatch', {'error', 'not_found'}}:_ ->
-            lager:warning("failed to build sip channel trying failover", []),
+            lager:warning("failed to build sip channel trying failover"),
             maybe_failover(Failover);
         _E:_R:ST ->
             lager:warning("failed to build sip channel (~s): ~p", [_E, _R]),
-            kz_util:log_stacktrace(ST),
+            kz_log:log_stacktrace(ST),
             {'error', 'invalid'}
     end.
 
@@ -976,44 +1019,60 @@ build_sip_channel_fold(Fun, Endpoint) ->
     end.
 
 -spec maybe_failover(kz_json:object()) ->
-                            {'ok', bridge_channel()} |
-                            {'error', any()}.
+          {'ok', bridge_channel()} |
+          {'error', 'invalid'}.
 maybe_failover(Endpoint) ->
     case kz_term:is_empty(Endpoint) of
         'true' -> {'error', 'invalid'};
         'false' -> build_sip_channel(endpoint_jobj_to_record(Endpoint))
     end.
 
--spec get_sip_contact(bridge_endpoint()) -> kz_term:ne_binary().
 -ifdef(TEST).
+-spec get_sip_contact(bridge_endpoint()) -> kz_term:ne_binary().
 get_sip_contact(#bridge_endpoint{invite_format = <<"route">>, route = <<"loopback/", Route/binary>>}) ->
     <<"loopback/", Route/binary, "/", (?DEFAULT_FREESWITCH_CONTEXT)/binary>>;
 get_sip_contact(#bridge_endpoint{invite_format = <<"route">>, route=Route}) ->
     Route;
 get_sip_contact(#bridge_endpoint{invite_format = <<"loopback">>, route=Route}) ->
     <<"loopback/", Route/binary, "/", (?DEFAULT_FREESWITCH_CONTEXT)/binary>>;
+get_sip_contact(#bridge_endpoint{ip_address='undefined'
+                                ,realm=_Realm
+                                ,username = <<"unregistered">>
+                                }) ->
+    %% Simulate a badmatch when registration is not found
+    {'ok', _Contact, _Props} = not_found();
+get_sip_contact(#bridge_endpoint{ip_address='undefined'
+                                ,realm=_Realm
+                                ,username = 'undefined'
+                                }) ->
+    error('badarg');
 get_sip_contact(#bridge_endpoint{ip_address='undefined'
                                 ,realm=Realm
                                 ,username=Username
                                 }) ->
     <<Username/binary, "@", Realm/binary>>;
 get_sip_contact(#bridge_endpoint{ip_address=IPAddress}) -> IPAddress.
+
+not_found() ->
+    {'error', 'not_found'}.
+
 -else.
+-spec get_sip_contact(bridge_endpoint()) -> kz_term:ne_binary().
 get_sip_contact(#bridge_endpoint{invite_format = <<"route">>, route = <<"loopback/", Route/binary>>}) ->
     <<"loopback/", Route/binary, "/", (?DEFAULT_FREESWITCH_CONTEXT)/binary>>;
 get_sip_contact(#bridge_endpoint{invite_format = <<"route">>, route=Route}) ->
     Route;
 get_sip_contact(#bridge_endpoint{invite_format = <<"loopback">>, route=Route}) ->
     <<"loopback/", Route/binary, "/", (?DEFAULT_FREESWITCH_CONTEXT)/binary>>;
-get_sip_contact(#bridge_endpoint{ip_address='undefined'
-                                ,realm=Realm
-                                ,username=Username
-                                ,channel_vars=CVs
-                                }=EP) ->
-    {'ok', Contact, Props} = ecallmgr_registrar:lookup_contact(Realm, Username),
-    Vars = ecallmgr_fs_xml:build_leg_vars(Props),
-    NewEP = EP#bridge_endpoint{channel_vars=Vars ++ CVs},
-    {binary:replace(Contact, <<">">>, <<>>), NewEP};
+get_sip_contact(#bridge_endpoint{invite_format = <<"forward">>
+                                ,route=Route
+                                }) ->
+    <<"kz/", Route/binary>>;
+get_sip_contact(#bridge_endpoint{invite_format = <<"endpoint">>
+                                ,endpoint_uri=EndpointURI
+                                }) ->
+    list_to_binary(["kz/", EndpointURI]);
+
 get_sip_contact(#bridge_endpoint{ip_address=IPAddress}) -> IPAddress.
 -endif.
 
@@ -1045,6 +1104,7 @@ guess_username(#bridge_endpoint{user=User}) when is_binary(User) -> User;
 guess_username(_) -> <<"kazoo">>.
 
 -spec maybe_replace_fs_path(kz_term:ne_binary(), bridge_endpoint()) -> kz_term:ne_binary().
+maybe_replace_fs_path(<<"kz/", _/binary>>=Contact, _EP) -> Contact;
 maybe_replace_fs_path(Contact, #bridge_endpoint{proxy_address='undefined'}) -> Contact;
 maybe_replace_fs_path(Contact, #bridge_endpoint{proxy_address = <<"sip:", _/binary>> = Proxy}) ->
     case re:replace(Contact, <<";fs_path=[^;?]*">>, <<";fs_path=", Proxy/binary>>, [{'return', 'binary'}]) of
@@ -1072,6 +1132,7 @@ maybe_replace_transport(Contact, #bridge_endpoint{transport=Transport}) ->
     end.
 
 -spec maybe_format_user(kz_term:ne_binary(), bridge_endpoint()) -> kz_term:ne_binary().
+maybe_format_user(<<"kz/", _/binary>>=Contact, _EP) -> Contact;
 maybe_format_user(Contact, #bridge_endpoint{invite_format = <<"username">>
                                            ,user=User
                                            }) when User =/= 'undefined' ->
@@ -1087,9 +1148,12 @@ maybe_format_user(Contact, #bridge_endpoint{invite_format = <<"npan">>, number=N
     re:replace(Contact, "^[^\@]+", knm_converters:to_npan(Number), [{'return', 'binary'}]);
 maybe_format_user(Contact, #bridge_endpoint{invite_format = <<"1npan">>, number=Number}) ->
     re:replace(Contact, "^[^\@]+", knm_converters:to_1npan(Number), [{'return', 'binary'}]);
+maybe_format_user(Contact, #bridge_endpoint{invite_format = <<"strip_plus">>, number=Number}) ->
+    re:replace(Contact, "^[^\@]+", knm_converters:to_strip_plus(Number), [{'return', 'binary'}]);
 maybe_format_user(Contact, _) -> Contact.
 
 -spec maybe_set_interface(kz_term:ne_binary(), bridge_endpoint()) -> kz_term:ne_binary().
+maybe_set_interface(<<"kz/", _/binary>>=Contact, _EP) -> Contact;
 maybe_set_interface(<<"sofia/", _/binary>>=Contact, _) -> Contact;
 maybe_set_interface(<<"loopback/", _/binary>>=Contact, _) -> Contact;
 maybe_set_interface(Contact, #bridge_endpoint{sip_interface='undefined'}=Endpoint) ->
@@ -1135,17 +1199,16 @@ maybe_append_channel_vars(Contact, #bridge_endpoint{channel_vars=ChannelVars
 
 -spec create_masquerade_event(kz_term:ne_binary(), kz_term:ne_binary()) -> kz_term:ne_binary().
 create_masquerade_event(Application, EventName) ->
-    create_masquerade_event(Application, EventName, 'true').
+    create_masquerade_event(Application, EventName, []).
 
--spec create_masquerade_event(kz_term:ne_binary(), kz_term:ne_binary(), boolean()) -> kz_term:ne_binary().
-create_masquerade_event(Application, EventName, Boolean) ->
-    Prefix = case Boolean of
-                 'true' -> <<"event ">>;
-                 'false' -> <<>>
-             end,
-    list_to_binary([Prefix, "Event-Name=CUSTOM,Event-Subclass=kazoo::masquerade"
+-spec create_masquerade_event(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:proplist()) -> kz_term:ne_binary().
+create_masquerade_event(Application, EventName, Props) ->
+    Args = [list_to_binary([",", K, "=", V]) || {K,V} <- Props],
+    list_to_binary(["event "
+                   ,"Event-Name=CUSTOM,Event-Subclass=kazoo::masquerade"
                    ,",kazoo_event_name=", EventName
                    ,",kazoo_application_name=", Application
+                    | Args
                    ]).
 
 %%------------------------------------------------------------------------------
@@ -1282,8 +1345,8 @@ convert_kazoo_app_name(App) ->
 
 -type media_types() :: 'new' | 'extant'.
 -spec lookup_media(kz_term:ne_binary(), media_types(), kz_term:ne_binary(), kz_json:object()) ->
-                          {'ok', kz_term:ne_binary()} |
-                          {'error', any()}.
+          {'ok', kz_term:ne_binary()} |
+          {'error', any()}.
 lookup_media(MediaName, Type, CallId, JObj) ->
     case kz_cache:fetch_local(?ECALLMGR_UTIL_CACHE
                              ,?ECALLMGR_PLAYBACK_MEDIA_KEY(MediaName)
@@ -1297,8 +1360,8 @@ lookup_media(MediaName, Type, CallId, JObj) ->
     end.
 
 -spec request_media_url(kz_term:ne_binary(), media_types(), kz_term:ne_binary(), kz_json:object()) ->
-                               {'ok', kz_term:ne_binary()} |
-                               {'error', any()}.
+          {'ok', kz_term:ne_binary()} |
+          {'error', any()}.
 request_media_url(MediaName, Type, CallId, JObj) ->
     MsgProps = props:filter_undefined(
                  [{<<"Media-Name">>, MediaName}
@@ -1326,8 +1389,8 @@ request_media_url(MediaName, Type, CallId, JObj) ->
     end.
 
 -spec maybe_cache_media_response(kz_term:ne_binary(), kz_json:objects()) ->
-                                        {'ok', kz_term:ne_binary()} |
-                                        {'error', 'not_found'}.
+          {'ok', kz_term:ne_binary()} |
+          {'error', 'not_found'}.
 maybe_cache_media_response(MediaName, MediaResp) ->
     case kz_json:find(<<"Stream-URL">>, MediaResp, <<>>) of
         <<>> ->
@@ -1335,11 +1398,11 @@ maybe_cache_media_response(MediaName, MediaResp) ->
             {'error', 'not_found'};
         MediaUrl ->
             CacheProps = media_url_cache_props(MediaName),
-            _ = kz_cache:store_local(?ECALLMGR_UTIL_CACHE
-                                    ,?ECALLMGR_PLAYBACK_MEDIA_KEY(MediaName)
-                                    ,MediaUrl
-                                    ,CacheProps
-                                    ),
+            catch kz_cache:store_local(?ECALLMGR_UTIL_CACHE
+                                      ,?ECALLMGR_PLAYBACK_MEDIA_KEY(MediaName)
+                                      ,MediaUrl
+                                      ,CacheProps
+                                      ),
             lager:debug("media ~s stored to playback cache : ~s", [MediaName, MediaUrl]),
             {'ok', MediaUrl}
     end.
@@ -1348,7 +1411,7 @@ maybe_cache_media_response(MediaName, MediaResp) ->
 media_url_cache_props(<<"/", _/binary>> = MediaName) ->
     case binary:split(MediaName, <<"/">>, ['global']) of
         [<<>>, AccountId, MediaId] ->
-            AccountDb = kz_util:format_account_id(AccountId, 'encoded'),
+            AccountDb = kzs_util:format_account_db(AccountId),
             [{'origin', {'db', AccountDb, MediaId}}];
         _Parts -> []
     end;
@@ -1357,7 +1420,7 @@ media_url_cache_props(<<"prompt://", Prompt/binary>>) ->
         [?KZ_MEDIA_DB, _MediaId] ->
             [{'origin', {'db', ?KZ_MEDIA_DB, <<"media">>}}];
         [AccountId, _MediaId] ->
-            AccountDb = kz_util:format_account_id(AccountId, 'encoded'),
+            AccountDb = kzs_util:format_account_db(AccountId),
             [{'origin', {'db', AccountDb, <<"media">>}}];
         _ -> []
     end;
@@ -1374,7 +1437,7 @@ custom_sip_headers(Props) ->
                ).
 
 -spec maybe_aggregate_headers({kz_term:ne_binary(), kz_term:ne_binary()}, kz_term:proplist()) ->
-                                     kz_term:proplist().
+          kz_term:proplist().
 maybe_aggregate_headers(KV, Acc) ->
     {K, V} = normalize_custom_sip_header_name(KV),
     maybe_aggregate_headers(K, V, Acc).
@@ -1417,6 +1480,7 @@ maybe_add_expires_deviation_ms(Expires) ->
 -spec get_dial_separator(kz_term:api_object() | kz_term:ne_binary(), kz_json:objects()) -> kz_term:ne_binary().
 get_dial_separator(?DIAL_METHOD_SINGLE, _Endpoints) -> ?SEPARATOR_SINGLE;
 get_dial_separator(?DIAL_METHOD_SIMUL, [_, _|_]) -> ?SEPARATOR_SIMULTANEOUS;
+%%get_dial_separator(?DIAL_METHOD_SIMUL, [_, _|_]) -> ?SEPARATOR_ENTERPRISE;
 get_dial_separator(?DIAL_METHOD_SIMUL, [_]) -> ?SEPARATOR_SINGLE;
 get_dial_separator('undefined', _Endpoints) -> ?SEPARATOR_SINGLE;
 get_dial_separator(JObj, Endpoints) ->
@@ -1444,4 +1508,18 @@ fix_contact([Contact | Options], Username, Realm) ->
         [#uri{}=Uri] ->
             list_to_binary([kzsip_uri:ruri(Uri)] ++ [<<";", Option/binary>> || Option <- Options]);
         _Else -> 'undefined'
+    end.
+
+-spec moh_media_path(kz_term:api_binary(), media_types(), kz_term:ne_binary(), kz_json:object()) -> kz_term:ne_binary().
+moh_media_path(Media, Types, UUID, JObj) ->
+    case media_path(Media, Types, UUID, JObj) of
+        <<"http_cache", _/binary>> = HttpMedia -> maybe_use_kz_moh(HttpMedia, JObj);
+        Else -> Else
+    end.
+
+-spec maybe_use_kz_moh(kz_term:ne_binary(), kz_json:object()) -> kz_term:ne_binary().
+maybe_use_kz_moh(Media, JObj) ->
+    case kz_json:is_true(?KZ_MOH_KEY, JObj, ?KZ_MOH_DEFAULT) of
+        'true' -> list_to_binary(["kz_moh::", Media]);
+        'false' -> Media
     end.

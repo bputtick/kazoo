@@ -1,8 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc Conversion of types.
 %%% @author James Aimonetti
 %%% @author Karl Anderson
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_term).
@@ -37,6 +41,7 @@
         ,is_boolean/1
         ,is_ne_binary/1, is_api_ne_binary/1
         ,is_ne_binaries/1
+        ,is_ne_binary_or_binaries/1
         ,is_empty/1, is_not_empty/1
         ,is_proplist/1, is_ne_list/1
         ,is_pos_integer/1
@@ -47,6 +52,10 @@
         ]).
 
 -export([a1hash/3, floor/1, ceiling/1]).
+
+-export([iolist_join/2]).
+
+-export([xnor/2]).
 
 -type text() :: string() | atom() | binary() | iolist().
 %% Denotes Erlang data type which can represent as.
@@ -252,7 +261,8 @@ uniq_list([H|T]) -> [H | [X || X <- uniq_list(T), X =/= H]].
 %%------------------------------------------------------------------------------
 -spec to_hex(text()) -> string().
 to_hex(S) ->
-    string:to_lower(lists:flatten([io_lib:format("~2.16.0B", [H]) || H <- to_list(S)])).
+    B = to_hex_binary(S),
+    to_list(B).
 
 -spec to_hex_binary(text()) -> binary().
 to_hex_binary(S) ->
@@ -429,6 +439,11 @@ is_ne_binaries(V) when is_list(V) ->
     lists:all(fun is_ne_binary/1, V);
 is_ne_binaries(_) -> 'false'.
 
+-spec is_ne_binary_or_binaries(any()) -> boolean().
+is_ne_binary_or_binaries(V) ->
+    is_ne_binary(V)
+        orelse is_ne_binaries(V).
+
 -spec is_boolean(binary() | string() | atom()) -> boolean().
 is_boolean(<<"true">>) -> 'true';
 is_boolean("true") -> 'true';
@@ -585,3 +600,31 @@ error_to_binary(Reason) ->
 -spec words_to_bytes(integer()) -> integer().
 words_to_bytes(Words) ->
     Words * erlang:system_info('wordsize').
+
+-spec iolist_join(Sep, List1) -> List2 when
+      Sep :: T,
+      List1 :: [T],
+      List2 :: [T],
+      T :: iodata() | char().
+iolist_join(_, []) -> [];
+iolist_join(Sep, [H|T]) ->
+    [H | iolist_join_prepend(Sep, T)].
+
+-spec iolist_join_prepend(Sep, List1) -> List2 when
+      Sep :: T,
+      List1 :: [T],
+      List2 :: [T],
+      T :: iolist().
+iolist_join_prepend(_, []) -> [];
+iolist_join_prepend(Sep, [H|T]) ->
+    [Sep, H | iolist_join_prepend(Sep, T)].
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec xnor(boolean(), boolean()) -> boolean().
+xnor('false', 'false') -> 'true';
+xnor('false', 'true') -> 'false';
+xnor('true', 'false') -> 'false';
+xnor('true', 'true') -> 'true'.

@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc Accessors for `port_requests' document.
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kzd_port_requests).
@@ -34,14 +38,15 @@
 -export([winning_carrier/1, winning_carrier/2, set_winning_carrier/2]).
 
 %% Private fields
--export([pvt_account_name/1, pvt_account_name/2, set_pvt_account_name/2]).
--export([pvt_port_authority/1, pvt_port_authority/2, set_pvt_port_authority/2]).
--export([pvt_port_authority_name/1, pvt_port_authority_name/2, set_pvt_port_authority_name/2]).
--export([pvt_port_state/1, pvt_port_state/2, set_pvt_port_state/2]).
--export([pvt_ported_numbers/1, pvt_ported_numbers/2, set_pvt_ported_numbers/2]).
--export([pvt_sent/1, pvt_sent/2, set_pvt_sent/2]).
--export([pvt_tree/1, pvt_tree/2, set_pvt_tree/2]).
--export([pvt_transitions/1, pvt_transitions/2, set_pvt_tranisitions/2]).
+-export([pvt_account_name/1, pvt_account_name/2, set_pvt_account_name/2, pvt_account_name_path/0]).
+-export([pvt_last_phonebook_error/1, pvt_last_phonebook_error/2, set_pvt_last_phonebook_error/2, pvt_last_phonebook_error_path/0]).
+-export([pvt_port_authority/1, pvt_port_authority/2, set_pvt_port_authority/2, pvt_port_authority_path/0]).
+-export([pvt_port_authority_name/1, pvt_port_authority_name/2, set_pvt_port_authority_name/2, pvt_port_authority_name_path/0]).
+-export([pvt_port_state/1, pvt_port_state/2, set_pvt_port_state/2, pvt_port_state_path/0]).
+-export([pvt_ported_numbers/1, pvt_ported_numbers/2, set_pvt_ported_numbers/2, pvt_ported_numbers_path/0]).
+-export([pvt_sent/1, pvt_sent/2, set_pvt_sent/2, pvt_sent_path/0]).
+-export([pvt_tree/1, pvt_tree/2, set_pvt_tree/2, pvt_tree_path/0]).
+-export([pvt_transitions/1, pvt_transitions/2, set_pvt_tranisitions/2, pvt_transitions_path/0]).
 
 %% Utilities
 -export([get_transition/2]).
@@ -381,11 +386,33 @@ pvt_account_name(Doc) ->
 
 -spec pvt_account_name(doc(), Default) -> kz_term:ne_binary() | Default.
 pvt_account_name(Doc, Default) ->
-    kz_json:get_ne_binary_value([<<"pvt_account_name">>], Doc, Default).
+    kz_json:get_ne_binary_value(pvt_account_name_path(), Doc, Default).
 
 -spec set_pvt_account_name(doc(), kz_term:ne_binary()) -> doc().
 set_pvt_account_name(Doc, Name) ->
-    kz_json:set_value([<<"pvt_account_name">>], Name, Doc).
+    kz_json:set_value(pvt_account_name_path(), Name, Doc).
+
+-spec pvt_account_name_path() -> kz_json:path().
+pvt_account_name_path() -> [<<"pvt_account_name">>].
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec pvt_last_phonebook_error(doc()) -> kz_term:api_ne_binary().
+pvt_last_phonebook_error(Doc) ->
+    pvt_last_phonebook_error(Doc, 'undefined').
+
+-spec pvt_last_phonebook_error(doc(), Default) -> kz_term:ne_binary() | Default.
+pvt_last_phonebook_error(Doc, Default) ->
+    kz_json:get_ne_binary_value(pvt_last_phonebook_error_path(), Doc, Default).
+
+-spec set_pvt_last_phonebook_error(doc(), kz_term:ne_binary()) -> doc().
+set_pvt_last_phonebook_error(Doc, Name) ->
+    kz_json:set_value(pvt_last_phonebook_error_path(), Name, Doc).
+
+-spec pvt_last_phonebook_error_path() -> kz_json:path().
+pvt_last_phonebook_error_path() -> [<<"pvt_last_phonebook_error">>].
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -397,11 +424,14 @@ pvt_port_authority(Doc) ->
 
 -spec pvt_port_authority(doc(), Default) -> kz_term:api_ne_binary() | Default.
 pvt_port_authority(Doc, Default) ->
-    kz_json:get_ne_binary_value([<<"pvt_port_authority">>], Doc, Default).
+    kz_json:get_ne_binary_value(pvt_port_authority_path(), Doc, Default).
 
 -spec set_pvt_port_authority(doc(), kz_term:api_binary()) -> doc().
 set_pvt_port_authority(Doc, PortAuthority) ->
-    kz_json:set_value([<<"pvt_port_authority">>], PortAuthority, Doc).
+    kz_json:set_value(pvt_port_authority_path(), PortAuthority, Doc).
+
+-spec pvt_port_authority_path() -> kz_json:path().
+pvt_port_authority_path() -> [<<"pvt_port_authority">>].
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -413,11 +443,14 @@ pvt_port_authority_name(Doc) ->
 
 -spec pvt_port_authority_name(doc(), Default) -> kz_term:api_ne_binary() | Default.
 pvt_port_authority_name(Doc, Default) ->
-    kz_json:get_ne_binary_value([<<"pvt_port_authority_name">>], Doc, Default).
+    kz_json:get_ne_binary_value(pvt_port_authority_name_path(), Doc, Default).
 
 -spec set_pvt_port_authority_name(doc(), kz_term:api_binary()) -> doc().
 set_pvt_port_authority_name(Doc, PortAuthority) ->
-    kz_json:set_value([<<"pvt_port_authority_name">>], PortAuthority, Doc).
+    kz_json:set_value(pvt_port_authority_name_path(), PortAuthority, Doc).
+
+-spec pvt_port_authority_name_path() -> kz_json:path().
+pvt_port_authority_name_path() -> [<<"pvt_port_authority_name">>].
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -429,11 +462,14 @@ pvt_port_state(Doc) ->
 
 -spec pvt_port_state(doc(), Default) -> kz_term:api_ne_binary() | Default.
 pvt_port_state(Doc, Default) ->
-    kz_json:get_ne_binary_value([<<"pvt_port_state">>], Doc, Default).
+    kz_json:get_ne_binary_value(pvt_port_state_path(), Doc, Default).
 
 -spec set_pvt_port_state(doc(), kz_term:api_binary()) -> doc().
 set_pvt_port_state(Doc, PortAuthority) ->
-    kz_json:set_value([<<"pvt_port_state">>], PortAuthority, Doc).
+    kz_json:set_value(pvt_port_state_path(), PortAuthority, Doc).
+
+-spec pvt_port_state_path() -> kz_json:path().
+pvt_port_state_path() -> [<<"pvt_port_state">>].
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -445,11 +481,14 @@ pvt_ported_numbers(Doc) ->
 
 -spec pvt_ported_numbers(doc(), Default) -> kz_json:object() | Default.
 pvt_ported_numbers(Doc, Default) ->
-    kz_json:get_json_value([<<"pvt_ported_numbers">>], Doc, Default).
+    kz_json:get_json_value(pvt_ported_numbers_path(), Doc, Default).
 
 -spec set_pvt_ported_numbers(doc(), kz_json:object()) -> doc().
 set_pvt_ported_numbers(Doc, Numbers) ->
-    kz_json:set_value([<<"pvt_ported_numbers">>], Numbers, Doc).
+    kz_json:set_value(pvt_ported_numbers_path(), Numbers, Doc).
+
+-spec pvt_ported_numbers_path() -> kz_json:path().
+pvt_ported_numbers_path() -> [<<"pvt_ported_numbers">>].
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -461,11 +500,14 @@ pvt_tree(Doc) ->
 
 -spec pvt_tree(doc(), Default) -> kz_term:ne_binaries() | Default.
 pvt_tree(Doc, Default) ->
-    kz_json:get_list_value([<<"pvt_tree">>], Doc, Default).
+    kz_json:get_list_value(pvt_tree_path(), Doc, Default).
 
 -spec set_pvt_tree(doc(), kz_term:api_ne_binaries()) -> doc().
 set_pvt_tree(Doc, Tree) ->
-    kz_json:set_value([<<"pvt_sent">>], Tree, Doc).
+    kz_json:set_value(pvt_tree_path(), Tree, Doc).
+
+-spec pvt_tree_path() -> kz_json:path().
+pvt_tree_path() -> [<<"pvt_tree">>].
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -477,11 +519,14 @@ pvt_sent(Doc) ->
 
 -spec pvt_sent(doc(), Default) -> kz_term:api_boolean() | Default.
 pvt_sent(Doc, Default) ->
-    kz_json:get_ne_binary_value([<<"pvt_sent">>], Doc, Default).
+    kz_json:get_ne_binary_value(pvt_sent_path(), Doc, Default).
 
 -spec set_pvt_sent(doc(), kz_term:api_boolean()) -> doc().
 set_pvt_sent(Doc, IsSent) ->
-    kz_json:set_value([<<"pvt_sent">>], IsSent, Doc).
+    kz_json:set_value(pvt_sent_path(), IsSent, Doc).
+
+-spec pvt_sent_path() -> kz_json:path().
+pvt_sent_path() -> [<<"pvt_sent">>].
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -493,11 +538,14 @@ pvt_transitions(Doc) ->
 
 -spec pvt_transitions(doc(), Default) -> kz_term:api_objects() | Default.
 pvt_transitions(Doc, Default) ->
-    kz_json:get_list_value([<<"pvt_transitions">>], Doc, Default).
+    kz_json:get_list_value(pvt_transitions_path(), Doc, Default).
 
 -spec set_pvt_tranisitions(doc(), kz_term:api_objects()) -> doc().
 set_pvt_tranisitions(Doc, Transitions) ->
-    kz_json:set_value([<<"pvt_transitions">>], Transitions, Doc).
+    kz_json:set_value(pvt_transitions_path(), Transitions, Doc).
+
+-spec pvt_transitions_path() -> kz_json:path().
+pvt_transitions_path() -> [<<"pvt_transitions">>].
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -554,7 +602,7 @@ find_port_authority(Doc) ->
     end.
 
 -spec find_port_authority(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:api_ne_binary()) ->
-                                 kz_term:api_binary().
+          kz_term:api_binary().
 find_port_authority(MasterAccountId, SubmittedAccountId, 'undefined') ->
     lager:debug("account id is undefined, checking master"),
     find_port_authority(MasterAccountId, SubmittedAccountId, MasterAccountId);
@@ -566,7 +614,7 @@ find_port_authority(MasterAccountId, SubmittedAccountId, AccountId) ->
     find_port_authority(MasterAccountId, SubmittedAccountId, AccountId, WhiteAuthority).
 
 -spec find_port_authority(kz_term:api_ne_binary(), kz_term:ne_binary(), kz_term:api_ne_binary(), kz_term:api_ne_binary()) ->
-                                 kz_term:api_binary().
+          kz_term:api_binary().
 find_port_authority(MasterAccountId, SubmittedAccountId, AccountId, 'undefined') ->
     ParentId = kzd_accounts:get_authoritative_parent_id(AccountId, MasterAccountId),
     lager:debug("no port authority key found for ~s, checking parent ~s", [AccountId, ParentId]),

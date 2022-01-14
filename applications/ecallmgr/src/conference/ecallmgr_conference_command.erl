@@ -1,6 +1,11 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc Execute conference commands
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_conference_command).
@@ -41,9 +46,9 @@ api(Node, ConferenceId, {AppName, AppData}) ->
     freeswitch:api(Node, 'conference', Command).
 
 -spec get_conf_command(kz_term:ne_binary(), atom(), kz_term:ne_binary(), kz_json:object()) ->
-                              fs_app() | fs_apps() |
-                              {'return', 'error' | kz_term:ne_binary()} |
-                              {'error', kz_term:ne_binary()}.
+          fs_app() | fs_apps() |
+          {'return', 'error' | kz_term:ne_binary()} |
+          {'error', kz_term:ne_binary()}.
 
 %% The following conference commands can operate on the entire conference
 
@@ -256,7 +261,7 @@ get_conf_command(Cmd, _Focus, _ConferenceId, _JObj) ->
     {'error', list_to_binary([<<"unknown conference command: ">>, Cmd])}.
 
 -spec dial(atom(), kz_term:ne_binary(), kz_json:object(), kz_json:object() | kz_json:objects()) ->
-                  api_response().
+          api_response().
 dial(Node, ConferenceId, JObj, [_|_]=Endpoints) ->
     DialCmd = list_to_binary([ecallmgr_fs_xml:get_channel_vars(kz_json:set_value(<<"Outbound-Context">>, <<"context_2">>, JObj))
                              ,ecallmgr_fs_bridge:try_create_bridge_string(Endpoints, JObj)

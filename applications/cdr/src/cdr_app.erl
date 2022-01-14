@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(cdr_app).
@@ -41,4 +46,5 @@ stop(_State) ->
 -spec declare_exchanges() -> 'ok'.
 declare_exchanges() ->
     _ = kapi_call:declare_exchanges(),
+    _ = kapi_cdr:declare_exchanges(),
     kapi_self:declare_exchanges().

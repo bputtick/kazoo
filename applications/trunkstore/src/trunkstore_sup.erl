@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(trunkstore_sup).
@@ -30,8 +35,8 @@
 -define(CACHE_PROPS, [{'origin_bindings', ?ORIGIN_BINDINGS}
                      ]).
 
--define(CHILDREN, [?SUPER('ts_onnet_sup') %% handles calls originating on-net (customer)
-                  ,?WORKER('ts_offnet_sup') %% handles calls originating off-net (carrier)
+-define(CHILDREN, [?SUPER('ts_onnet_sup') %% handles calls originating onnet (customer)
+                  ,?WORKER('ts_offnet_sup') %% handles calls originating offnet (carrier)
                   ,?CACHE_ARGS(?CACHE_NAME, ?CACHE_PROPS)
                   ,?WORKER('ts_responder')
                   ,?WORKER('trunkstore_listener')
@@ -66,7 +71,7 @@ pool_name() -> ?POOL_NAME.
 init([]) ->
     _ = kz_util:set_startup(),
 
-    kz_nodes:bind_for_pool_state('kz_amqp_sup', self()),
+    _ = kz_nodes:bind_for_pool_state('kz_amqp_sup', self()),
 
     RestartStrategy = 'one_for_one',
     MaxRestarts = 5,

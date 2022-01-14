@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_services_plans).
@@ -128,10 +132,9 @@ get_services_plan_overrides(Services, PlanId) ->
 -spec get_object_plans(kz_services:services(), fetch_context(), fetch_options()) -> fetch_context().
 get_object_plans(Services, FetchContext, Options) ->
     AccountId = kz_services:account_id(Services),
-    AccountDb = kz_util:format_account_db(AccountId),
-    case kz_datamgr:get_results(AccountDb, <<"services/object_plans">>) of
+    case kz_datamgr:get_results(AccountId, <<"services/object_plans">>) of
         {'error', _Reason} ->
-            lager:info("unable to list object plans: ~p", [_Reason]),
+            lager:info("unable to list object plans for account ~s: ~p", [AccountId, _Reason]),
             FetchContext;
         {'ok', ObjectPlans} ->
             lager:debug("found ~p references to object plans", [length(ObjectPlans)]),
@@ -186,7 +189,7 @@ get_object_plan(Services, PlanId, JObj, FetchContext) ->
     maybe_append_plan(Services, PlanId, VendorId, Overrides, FetchContext).
 
 -spec maybe_append_plan(kz_services:services(), kz_term:ne_binary(), kz_term:ne_binary(), kz_json:object(), fetch_context()) ->
-                               fetch_context().
+          fetch_context().
 maybe_append_plan(Services, PlanId, VendorId, Overrides, {FetchedPlans, ServicePlans}) ->
     case maybe_fetch_plan(PlanId, VendorId, FetchedPlans) of
         {'undefined', _} -> {FetchedPlans, ServicePlans};
@@ -227,7 +230,7 @@ default_bookkeeper(Services) ->
     kzd_services:bookkeeper(kz_doc:setters(Routines), kz_json:new()).
 
 -spec maybe_fetch_plan(kz_term:ne_binary(), kz_term:ne_binary(), dict:dict()) ->
-                              {kz_services_plan:plan() | 'undefined', fetched_plans()}.
+          {kz_services_plan:plan() | 'undefined', fetched_plans()}.
 maybe_fetch_plan(PlanId, VendorId, FetchedPlans) ->
     Key = plan_jobjs_key(VendorId, PlanId),
     case dict:find(Key, FetchedPlans) of

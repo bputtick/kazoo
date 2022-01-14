@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2013-2019, 2600Hz
+%%% @copyright (C) 2013-2020, 2600Hz
 %%% @doc Manage the bucket servers
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(acdc_stats_sup).
@@ -42,8 +47,8 @@ start_link() ->
     supervisor:start_link({'local', ?SERVER}, ?MODULE, []).
 
 -spec stats_srv() ->
-                       {'ok', pid()} |
-                       {'error', 'not_found'}.
+          {'ok', pid()} |
+          {'error', 'not_found'}.
 stats_srv() ->
     case [P || {'acdc_stats', P, _, _} <- supervisor:which_children(?SERVER)] of
         [P] when is_pid(P) -> {'ok', P};

@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(j5_limits).
@@ -63,16 +67,16 @@
 %%------------------------------------------------------------------------------
 -spec get(kz_term:ne_binary()) -> limits().
 get(Account) ->
-    AccountId = kz_util:format_account_id(Account, 'raw'),
+    AccountId = kzs_util:format_account_id(Account),
     case kz_cache:peek_local(?CACHE_NAME, ?LIMITS_KEY(AccountId)) of
         {'ok', Limits} -> Limits;
         {'error', 'not_found'} -> fetch(AccountId)
     end.
 
 -spec fetch(kz_term:ne_binary()) -> limits().
-fetch(Account) ->
-    AccountId = kz_util:format_account_id(Account),
-    AccountDb = kz_util:format_account_db(Account),
+fetch(<<Account/binary>>) ->
+    AccountId = kzs_util:format_account_id(Account),
+    AccountDb = kzs_util:format_account_db(Account),
     JObj = kz_services_limits:fetch(AccountId),
     CacheOrigins = kz_json:get_ne_value(<<"pvt_cache_origins">>, JObj, []),
     case kz_term:is_empty(JObj) of
@@ -160,7 +164,8 @@ resource_consuming_calls(#limits{resource_consuming_calls=Calls}) -> Calls.
 -spec inbound_trunks(limits()) -> tristate_integer().
 inbound_trunks(#limits{inbound_trunks=-1}) -> -1;
 inbound_trunks(#limits{bundled_inbound_trunks=BundledTrunks
-                      ,inbound_trunks=Trunks}) ->
+                      ,inbound_trunks=Trunks
+                      }) ->
     BundledTrunks + Trunks.
 
 %%------------------------------------------------------------------------------
@@ -170,7 +175,8 @@ inbound_trunks(#limits{bundled_inbound_trunks=BundledTrunks
 -spec outbound_trunks(limits()) -> tristate_integer().
 outbound_trunks(#limits{outbound_trunks=-1}) -> -1;
 outbound_trunks(#limits{bundled_outbound_trunks=BundledTrunks
-                       ,outbound_trunks=Trunks}) ->
+                       ,outbound_trunks=Trunks
+                       }) ->
     BundledTrunks + Trunks.
 
 %%------------------------------------------------------------------------------
@@ -180,7 +186,8 @@ outbound_trunks(#limits{bundled_outbound_trunks=BundledTrunks
 -spec twoway_trunks(limits()) -> tristate_integer().
 twoway_trunks(#limits{twoway_trunks=-1}) -> -1;
 twoway_trunks(#limits{bundled_twoway_trunks=BundledTrunks
-                     ,twoway_trunks=Trunks}) ->
+                     ,twoway_trunks=Trunks
+                     }) ->
     BundledTrunks + Trunks.
 
 %%------------------------------------------------------------------------------
@@ -252,7 +259,7 @@ create_limits(AccountId, AccountDb, JObj) ->
            ,bundled_twoway_trunks = kzd_limits:bundled_twoway_trunks(JObj, AccountDb)
            ,burst_trunks = kzd_limits:burst_trunks(JObj)
            ,max_postpay_amount = kzd_limits:max_postpay_units(JObj) * -1
-           ,reserve_amount = kzd_limits:reserve_units(JObj, ?DEFAULT_RATE)
+           ,reserve_amount = kzd_limits:reserve_units(JObj, kz_currency:dollars_to_units(?DEFAULT_RATE))
            ,allow_prepay = kzd_limits:allow_prepay(JObj)
            ,allow_postpay = kzd_limits:allow_postpay(JObj)
            ,allotments = kzd_limits:allotments(JObj)

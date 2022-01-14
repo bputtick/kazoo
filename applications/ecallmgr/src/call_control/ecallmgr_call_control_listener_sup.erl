@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_call_control_listener_sup).
@@ -28,12 +32,12 @@ start_link() ->
                                        ,[]
                                        ),
     Workers = kapps_config:get_integer(?APP_NAME, <<"call_control_listeners">>, 5),
-    _ = kz_util:spawn(fun() -> [begin
-                                    _ = supervisor:start_child(Pid, []),
-                                    timer:sleep(250)
-                                end || _N <- lists:seq(1, Workers)
-                               ]
-                      end),
+    _ = kz_process:spawn(fun() -> [begin
+                                       _ = supervisor:start_child(Pid, []),
+                                       timer:sleep(250)
+                                   end || _N <- lists:seq(1, Workers)
+                                  ]
+                         end),
     {'ok', Pid}.
 
 %% ===================================================================
@@ -65,8 +69,4 @@ control_q(Map) ->
     lager:debug("fs call control sup control_q returning  ~p, ~p , ~p", [ControlP, Q, Channel]),
     Map#{control_q => Q
         ,channel => Channel
-        ,init_fun => fun(#{channel := C}) ->
-                             kz_amqp_channel:consumer_channel(C)
-                     end
-        ,exit_fun => fun(#{}) -> 'ok' end
         }.

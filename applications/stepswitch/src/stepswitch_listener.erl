@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(stepswitch_listener).
@@ -32,16 +36,10 @@
        ,[?RESOURCE_TYPE_AUDIO, ?RESOURCE_TYPE_ORIGINATE, ?RESOURCE_TYPE_SMS, ?RESOURCE_TYPE_VIDEO]
        ).
 
--define(BINDINGS, [{'route', [{'types', ?ROUTE_RESOURCE_TYPES_HANDLED}
-                             ,{'restrict_to', ['no_account']}
-                             ]
-                   }
-                  ,{'offnet_resource', [{'types', ?OFFNET_RESOURCE_TYPES_HANDLED}]}
+-define(BINDINGS, [{'offnet_resource', [{'types', ?OFFNET_RESOURCE_TYPES_HANDLED}]}
                   ,{'authn', []}
                   ]).
--define(RESPONDERS, [{'stepswitch_inbound'
-                     ,[{<<"dialplan">>, <<"route_req">>}]}
-                    ,{'stepswitch_outbound'
+-define(RESPONDERS, [{'stepswitch_outbound'
                      ,[{<<"resource">>, <<"offnet_req">>}]}
                     ,{'stepswitch_authn_req'
                      ,[{<<"directory">>, <<"authn_req">>}]}

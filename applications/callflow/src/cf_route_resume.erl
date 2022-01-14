@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc Starts a {@link cf_exe} and processes the "flow" sans DB.
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(cf_route_resume).
@@ -13,7 +18,7 @@
 -spec handle_req(kapi_callflow:resume(), kz_term:proplist()) -> 'ok'.
 handle_req(ResumeJObj, _Props) ->
     'true' = kapi_callflow:resume_v(ResumeJObj),
-    kz_util:put_callid(ResumeJObj),
+    kz_log:put_callid(ResumeJObj),
     kz_amqp_worker:worker_pool(callflow_sup:pool_name()),
 
     try_handle_req(ResumeJObj, kz_amqp_worker:checkout_worker()).

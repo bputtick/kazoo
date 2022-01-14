@@ -1,9 +1,13 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2013-2019, 2600Hz
+%%% @copyright (C) 2013-2020, 2600Hz
 %%% @doc Listens for a list of events and gproc-sends them out to folks who
 %%% want them
 %%%
 %%% @author James Aimonetti
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kapps_call_events).
@@ -34,7 +38,7 @@ is_destroyed(Call) ->
     is_destroyed(kapps_call:call_id(Call)).
 
 -spec get_event(kz_term:ne_binary() | kapps_call:call()) -> {'ok', kz_call_event:doc()} |
-                                                            {'error', 'not_found'}.
+          {'error', 'not_found'}.
 get_event(<<CallId/binary>>) ->
     kz_cache:peek_local(?KAPPS_CALL_CACHE, {?MODULE, CallId});
 get_event(Call) ->

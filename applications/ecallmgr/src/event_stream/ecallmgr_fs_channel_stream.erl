@@ -1,9 +1,14 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2013-2019, 2600Hz
+%%% @copyright (C) 2013-2020, 2600Hz
 %%% @doc Track the FreeSWITCH channel information, and provide accessors
 %%%
 %%% @author James Aimonetti
 %%% @author Karl Anderson
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_fs_channel_stream).
@@ -68,14 +73,14 @@ channel_update(#{node := Node, call_id := UUID, payload := JObj}) ->
 
 -spec channel_sync(map()) -> any().
 channel_sync(#{node := Node, call_id := UUID, payload := JObj}) ->
-    _ = case kz_json:get_ne_binary_value(<<"Event-Node">>, JObj) =:= kz_term:to_binary(node())
-            andalso kz_json:get_ne_binary_value(<<"Event-PID">>, JObj)
-        of
-            'false' -> 'ok';
-            'undefined' -> 'ok';
-            Pid -> kz_term:to_pid(Pid) ! {'channel_sync', JObj}
-        end,
-    ecallmgr_fs_channel:update(Node, UUID, JObj).
+    EventNode = kz_json:get_ne_binary_value(<<"Event-Node">>, JObj),
+    case EventNode =:= kz_term:to_binary(node())
+        andalso kz_json:get_ne_binary_value(<<"Event-PID">>, JObj)
+    of
+        'false' -> lager:warning("sync not for this node ~s / ~s", [Node, EventNode]);
+        'undefined' -> ecallmgr_fs_channel:update(Node, UUID, JObj);
+        Pid -> kz_term:to_pid(Pid) ! {'channel_sync', JObj}
+    end.
 
 -spec channel_bridge(map()) -> any().
 channel_bridge(#{call_id := UUID, payload := JObj}) ->
@@ -107,7 +112,7 @@ channel_unhold(#{call_id := UUID}) ->
 %%------------------------------------------------------------------------------
 maybe_authorize_channel(Node, UUID, JObj) ->
     case kz_json:get_value([<<"Custom-Channel-Vars">>, <<"Ecallmgr-Node">>], JObj) =:= kz_term:to_binary(node()) of
-        'true' -> authorize_channel(Node, UUID, JObj);
+        'true' -> kz_process:spawn(fun authorize_channel/3, [Node, UUID, JObj]);
         'false' -> 'ok'
     end.
 

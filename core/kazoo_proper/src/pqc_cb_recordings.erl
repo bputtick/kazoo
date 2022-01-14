@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(pqc_cb_recordings).
@@ -25,8 +30,8 @@
 -define(ACCOUNT_NAMES, [<<"account_for_recordings">>]).
 
 -spec list_recordings(pqc_cb_api:state(), pqc_cb_accounts:account_id()) ->
-                             {'error', 'not_found'} |
-                             {'ok', kz_json:objects()}.
+          {'error', 'not_found'} |
+          {'ok', kz_json:objects()}.
 list_recordings(API, AccountId) ->
     Expectations = [#expectation{response_codes = [200]}],
     case pqc_cb_api:make_request(Expectations
@@ -44,8 +49,8 @@ list_recordings(API, AccountId) ->
     end.
 
 -spec fetch_recording(pqc_cb_api:state(), pqc_cb_accounts:account_id(), kz_term:ne_binary()) ->
-                             {'ok', kz_json:object()} |
-                             {'error', 'not_found'}.
+          {'ok', kz_json:object()} |
+          {'error', 'not_found'}.
 fetch_recording(API, AccountId, RecordingId) ->
     Expectations = [#expectation{response_codes = [200]}],
     case pqc_cb_api:make_request(Expectations
@@ -63,8 +68,8 @@ fetch_recording(API, AccountId, RecordingId) ->
     end.
 
 -spec fetch_recording_binary(pqc_cb_api:state(), pqc_cb_accounts:account_id(), kz_term:ne_binary()) ->
-                                    {'ok', kz_term:ne_binary()} |
-                                    {'error', 'not_found'}.
+          {'ok', kz_term:ne_binary()} |
+          {'error', 'not_found'}.
 fetch_recording_binary(API, AccountId, RecordingId) ->
     Expectations = [#expectation{response_codes = [200]
                                 ,response_headers = [{"content-type", "audio/mpeg"}]
@@ -72,7 +77,7 @@ fetch_recording_binary(API, AccountId, RecordingId) ->
     case pqc_cb_api:make_request(Expectations
                                 ,fun kz_http:get/2
                                 ,recordings_url(AccountId, RecordingId)
-                                ,pqc_cb_api:request_headers(API, [{"accept", "audio/mpeg"}])
+                                ,pqc_cb_api:request_headers(API, [{<<"accept">>, "audio/mpeg"}])
                                 )
     of
         {'error', _E} ->
@@ -83,8 +88,8 @@ fetch_recording_binary(API, AccountId, RecordingId) ->
     end.
 
 -spec fetch_recording_tunneled(pqc_cb_api:state(), pqc_cb_accounts:account_id(), kz_term:ne_binary()) ->
-                                      {'ok', kz_term:ne_binary()} |
-                                      {'error', 'not_found'}.
+          {'ok', kz_term:ne_binary()} |
+          {'error', 'not_found'}.
 fetch_recording_tunneled(API, AccountId, RecordingId) ->
     Expectations = [#expectation{response_codes = [200]
                                 ,response_headers = [{"content-type", "audio/mpeg"}]
@@ -103,9 +108,9 @@ fetch_recording_tunneled(API, AccountId, RecordingId) ->
     end.
 
 -spec create_recording(pqc_cb_api:state(), pqc_cb_accounts:account_id()) ->
-                              {'ok', kzd_call_recordings:doc()}.
+          {'ok', kzd_call_recordings:doc()}.
 create_recording(_API, AccountId) ->
-    MODB = kz_util:format_account_mod_id(AccountId),
+    MODB = kzs_util:format_account_mod_id(AccountId),
 
     BaseMediaDoc = create_recording_doc(),
     MediaDoc = kz_doc:update_pvt_parameters(BaseMediaDoc, MODB, [{'type', kzd_call_recordings:type()}]),
@@ -133,8 +138,8 @@ create_attachment(MODB, DocId) ->
     kz_datamgr:put_attachment(MODB, DocId, AName, Contents, [{'content_type', kz_mime:from_filename(File)}]).
 
 -spec delete_recording(pqc_cb_api:state(), pqc_cb_accounts:account_id(), kz_term:ne_binary()) ->
-                              {'ok', kz_json:object()} |
-                              {'error', 'not_found'}.
+          {'ok', kz_json:object()} |
+          {'error', 'not_found'}.
 delete_recording(API, AccountId, RecordingId) ->
     Expectations = [#expectation{response_codes = [200, 404]}],
     case pqc_cb_api:make_request(Expectations

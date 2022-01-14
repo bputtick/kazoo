@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(media_proxy).
@@ -14,11 +19,11 @@
 
 -spec start_link() -> kz_types:startlink_ret().
 start_link() ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
 
-    Dispatch = cowboy_router:compile([{'_', [{<<"/store/[...]">>, [], 'kz_media_store_proxy', []}
-                                            ,{<<"/single/[...]">>, [], 'kz_media_proxy_handler', ['single']}
-                                            ,{<<"/continuous/[...]">>, [], 'kz_media_proxy_handler', ['continuous']}
+    Dispatch = cowboy_router:compile([{'_', [{<<"/store/[...]">>, [], 'media_store_proxy', []}
+                                            ,{<<"/single/[...]">>, [], 'media_proxy_handler', ['single']}
+                                            ,{<<"/continuous/[...]">>, [], 'media_proxy_handler', ['continuous']}
                                             ]}
                                      ]),
 
@@ -47,10 +52,11 @@ maybe_start_plaintext(Dispatch, IP) ->
             Listeners = kapps_config:get_integer(?CONFIG_CAT, <<"proxy_listeners">>, 25),
 
             {'ok', _Pid} = cowboy:start_clear(?MODULE
-                                             ,[{'ip', IP}
-                                              ,{'port', Port}
-                                              ,{'num_acceptors', Listeners}
-                                              ]
+                                             ,#{'socket_opts' => [{'ip', IP}
+                                                                 ,{'port', Port}
+                                                                 ]
+                                               ,'num_acceptors' => Listeners
+                                               }
                                              ,#{'env' => #{'dispatch' => Dispatch}}
                                              ),
             lager:info("started media proxy(~p) on port ~p", [_Pid, Port])
@@ -81,13 +87,14 @@ maybe_start_ssl(Dispatch, IP) ->
 
             try
                 {'ok', _Pid} = cowboy:start_tls('media_mgr_ssl'
-                                               ,[{'ip', IP}
-                                                ,{'port', SSLPort}
-                                                ,{'num_acceptors', Listeners}
-                                                ,{'certfile', find_file(SSLCert, RootDir)}
-                                                ,{'keyfile', find_file(SSLKey, RootDir)}
-                                                ,{'password', SSLPassword}
-                                                ]
+                                               ,#{'socket_opts' => [{'ip', IP}
+                                                                   ,{'port', SSLPort}
+                                                                   ,{'certfile', find_file(SSLCert, RootDir)}
+                                                                   ,{'keyfile', find_file(SSLKey, RootDir)}
+                                                                   ,{'password', SSLPassword}
+                                                                   ]
+                                                 ,'num_acceptors' => Listeners
+                                                 }
                                                ,#{'env' => #{'dispatch' => Dispatch}
                                                  }
                                                ),

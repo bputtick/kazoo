@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2017-2019, 2600Hz
+%%% @copyright (C) 2017-2020, 2600Hz
 %%% @doc Google Drive for attachments.
 %%% @author Luis Azedo
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_att_onedrive).
@@ -188,8 +193,8 @@ onedrive_format_url(Map, AttInfo) ->
     kz_att_util:format_url(Map, AttInfo, onedrive_default_fields()).
 
 -spec onedrive_put(binary(), kz_term:proplist(), binary()) ->
-                          {'ok', {binary(), binary()}, kz_term:proplist()} |
-                          {'error', kz_term:ne_binary(), kz_http:ret() | atom()}.
+          {'ok', {binary(), binary()}, kz_term:proplist()} |
+          {'error', kz_term:ne_binary(), kz_http:ret() | atom()}.
 onedrive_put(Url, Headers, Body) ->
     case kz_http:put(Url, Headers, Body, ?GRAPH_HTTP_OPTIONS) of
         {'ok', Code, ResponseHeaders, ResponseBody}

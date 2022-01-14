@@ -1,10 +1,15 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2013-2019, 2600Hz
+%%% @copyright (C) 2013-2020, 2600Hz
 %%% @doc Handles port request life cycles
 %%% See doc/port_requests.md
 %%%
 %%%
 %%% @author James Aimonetti
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(cb_port_requests).
@@ -31,7 +36,7 @@
         ]).
 
 -include("crossbar.hrl").
--include_lib("kazoo_number_manager/include/knm_port_request.hrl").
+-include_lib("kazoo_numbers/include/knm_port_request.hrl").
 
 -define(SCHEMA, <<"port_requests">>).
 -define(SCHEMA_TO_SCHEDULED, <<(?SCHEMA)/binary, ".to_scheduled">>).
@@ -45,7 +50,6 @@
                                ]).
 
 -define(ACCOUNTS_BY_SIMPLE_ID, <<"accounts/listing_by_simple_id">>).
--define(PORT_REQ_NUMBERS, <<"port_requests/port_in_numbers">>).
 -define(ALL_PORT_REQ_NUMBERS, <<"port_requests/all_port_in_numbers">>).
 -define(LISTING_BY_STATE, <<"port_requests/listing_by_state">>).
 -define(LISTING_BY_NUMBER, <<"port_requests/listing_by_number">>).
@@ -90,16 +94,16 @@ init() ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec authorize(cb_context:context()) ->
-                       'false' |
-                       {'true', cb_context:context()} |
-                       {'stop', cb_context:context()}.
+          'false' |
+          {'true', cb_context:context()} |
+          {'stop', cb_context:context()}.
 authorize(Context) ->
     authorize(Context, cb_context:req_nouns(Context), cb_context:req_verb(Context)).
 
 -spec authorize(cb_context:context(), req_nouns(), req_verb()) ->
-                       boolean() |
-                       {'true', cb_context:context()} |
-                       {'stop', cb_context:context()}.
+          boolean() |
+          {'true', cb_context:context()} |
+          {'stop', cb_context:context()}.
 authorize(Context, [{<<"port_requests">>, []}], ?HTTP_GET) ->
     C1 = set_port_authority(Context),
     case cb_context:fetch(C1, 'is_port_authority', 'false')
@@ -196,14 +200,14 @@ resource_exists(_PortRequestId, ?PORT_ATTACHMENT, _AttachmentId) -> 'true'.
 acceptable_content_types() -> ?ATTACHMENT_MIME_TYPES.
 
 -spec content_types_provided(cb_context:context(), path_token(), path_token()) ->
-                                    cb_context:context().
+          cb_context:context().
 content_types_provided(Context, _Id, ?PATH_TOKEN_LOA) ->
     cb_context:add_content_types_provided(Context, [{'to_binary', ?PDF_CONTENT_TYPES}]);
 content_types_provided(Context, _Id, _Path) ->
     Context.
 
 -spec content_types_provided(cb_context:context(), path_token(), path_token(), path_token()) ->
-                                    cb_context:context().
+          cb_context:context().
 content_types_provided(Context, _Id, ?PORT_ATTACHMENT, _AttachmentId) ->
     case cb_context:req_verb(Context) of
         ?HTTP_GET -> content_types_provided_get(Context, _Id, _AttachmentId);
@@ -212,7 +216,7 @@ content_types_provided(Context, _Id, ?PORT_ATTACHMENT, _AttachmentId) ->
 
 -spec content_types_provided_get(cb_context:context(), kz_term:ne_binary(), kz_term:ne_binary()) -> cb_context:context().
 content_types_provided_get(Context, Id, AttachmentId) ->
-    Context1 = cb_context:set_account_db(Context, ?KZ_PORT_REQUESTS_DB),
+    Context1 = cb_context:set_db_name(Context, ?KZ_PORT_REQUESTS_DB),
     cb_context:add_attachment_content_type(Context1, Id, AttachmentId).
 
 %%------------------------------------------------------------------------------
@@ -222,7 +226,7 @@ content_types_provided_get(Context, Id, AttachmentId) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec content_types_accepted(cb_context:context(), path_token(), path_token()) ->
-                                    cb_context:context().
+          cb_context:context().
 content_types_accepted(Context, _Id, ?PORT_ATTACHMENT) ->
     CTA = [{'from_binary', ?ATTACHMENT_MIME_TYPES}],
     cb_context:add_content_types_accepted(Context, CTA);
@@ -230,7 +234,7 @@ content_types_accepted(Context, _Id, _) ->
     Context.
 
 -spec content_types_accepted(cb_context:context(), path_token(), path_token(), path_token()) ->
-                                    cb_context:context().
+          cb_context:context().
 content_types_accepted(Context, _Id, ?PORT_ATTACHMENT, _AttachmentId) ->
     case cb_context:req_verb(Context) of
         ?HTTP_POST ->
@@ -266,13 +270,13 @@ validate_port_requests(Context, ?HTTP_PUT) ->
 validate(Context, Id) ->
     Comments = kzd_port_requests:comments(cb_context:req_data(Context), []),
     Setters = [{fun cb_context:store/3, 'req_comments', Comments}
-              ,{fun cb_context:set_account_db/2, ?KZ_PORT_REQUESTS_DB}
+              ,{fun cb_context:set_db_name/2, ?KZ_PORT_REQUESTS_DB}
               ],
     C1 = cb_context:setters(Context, Setters),
     validate_port_request(set_port_authority(C1), Id, cb_context:req_verb(C1)).
 
 -spec validate_port_request(cb_context:context(), kz_term:ne_binary(), http_method()) ->
-                                   cb_context:context().
+          cb_context:context().
 validate_port_request(Context, ?PATH_TOKEN_LAST_SUBMITTED, ?HTTP_GET) ->
     C1 = cb_context:set_req_data(Context, kz_json:from_list([{<<"by_types">>, ?PATH_TOKEN_LAST_SUBMITTED}])),
     summary(set_port_authority(C1));
@@ -290,7 +294,7 @@ validate_port_request(Context, Id, ?HTTP_DELETE) ->
     is_deletable(load_port_request(Context, Id)).
 
 -spec validate(cb_context:context(), path_token(), path_token()) ->
-                      cb_context:context().
+          cb_context:context().
 validate(Context, Id, ToState=?PORT_SUBMITTED) ->
     patch_then_validate_then_maybe_transition(Context, Id, ToState);
 validate(Context, Id, ToState=?PORT_PENDING) ->
@@ -310,26 +314,26 @@ validate(Context, Id, ?PATH_TOKEN_LOA) ->
 validate(Context, Id, ?PATH_TOKEN_TIMELINE) ->
     C1 = load_port_request(set_port_authority(Context), Id),
     case 'success' =:= cb_context:resp_status(C1) of
-        false -> C1;
-        true ->
+        'false' -> C1;
+        'true' ->
             NewDoc = prepare_timeline(C1, cb_context:doc(C1)),
             cb_context:set_resp_data(C1, NewDoc)
     end.
 
 -spec validate_attachments(cb_context:context(), kz_term:ne_binary(), http_method()) ->
-                                  cb_context:context().
+          cb_context:context().
 validate_attachments(Context, Id, ?HTTP_GET) ->
     summary_attachments(Context, Id);
 validate_attachments(Context, Id, ?HTTP_PUT) ->
     read(Context, Id).
 
 -spec validate(cb_context:context(), path_token(), path_token(), path_token()) ->
-                      cb_context:context().
+          cb_context:context().
 validate(Context, Id, ?PORT_ATTACHMENT, AttachmentId) ->
     validate_attachment(set_port_authority(Context), Id, AttachmentId, cb_context:req_verb(Context)).
 
 -spec validate_attachment(cb_context:context(), kz_term:ne_binary(), kz_term:ne_binary(), http_method()) ->
-                                 cb_context:context().
+          cb_context:context().
 validate_attachment(Context, Id, AttachmentId, ?HTTP_GET) ->
     load_attachment(Id, AttachmentId, Context);
 validate_attachment(Context, Id, AttachmentId, ?HTTP_POST) ->
@@ -369,7 +373,7 @@ put(Context, Id, ?PORT_ATTACHMENT) ->
     CT = kz_json:get_value([<<"headers">>, <<"content_type">>], FileJObj),
     Opts = [{'content_type', CT} | ?TYPE_CHECK_OPTION(?TYPE_PORT_REQUEST)],
     AName = cb_modules_util:attachment_name(Filename, CT),
-    Context1 = cb_context:set_account_db(Context, ?KZ_PORT_REQUESTS_DB),
+    Context1 = cb_context:set_db_name(Context, ?KZ_PORT_REQUESTS_DB),
     crossbar_doc:save_attachment(Id, AName, Contents, Context1, Opts).
 
 %%------------------------------------------------------------------------------
@@ -382,16 +386,14 @@ patch(Context, Id) ->
 
 -spec patch(cb_context:context(), path_token(), path_token()) -> cb_context:context().
 patch(Context, Id, NewState=?PORT_SUBMITTED) ->
-    case phonebook:maybe_create_port_in(Context) of
+    case cb_modules_util:phonebook_port_in(Context) of
         {'ok', 'disabled'} ->
             save_then_maybe_notify(Context, Id, NewState);
         {'ok', Response} ->
             C1 = handle_phonebook_response(Context, Response),
             save_then_maybe_notify(C1, Id, NewState);
-        {'error', {Code, Response}} ->
-            handle_phonebook_error(Context, Code, Response);
-        {'error', Message} ->
-            cb_context:add_system_error('datastore_fault', Message, Context)
+        {'error', Error} ->
+            handle_phonebook_error(Context, Error)
     end;
 patch(Context, Id, NewState=?PORT_PENDING) ->
     save_then_maybe_notify(Context, Id, NewState);
@@ -403,14 +405,7 @@ patch(Context, Id, NewState=?PORT_COMPLETED) ->
 patch(Context, Id, NewState=?PORT_REJECTED) ->
     save_then_maybe_notify(Context, Id, NewState);
 patch(Context, Id, NewState=?PORT_CANCELED) ->
-    case phonebook:maybe_cancel_port_in(Context) of
-        {'ok', _} ->
-            save_then_maybe_notify(Context, Id, NewState);
-        {'error', {Code, Response}} ->
-            handle_phonebook_error(Context, Code, Response);
-        {'error', Message} ->
-            cb_context:add_system_error('datastore_fault', Message, Context)
-    end.
+    save_then_maybe_notify(Context, Id, NewState).
 
 %%------------------------------------------------------------------------------
 %% @doc If the HTTP verb is POST, execute the actual action, usually a db save
@@ -431,7 +426,7 @@ post(Context, Id, ?PORT_ATTACHMENT, AttachmentId) ->
             'undefined' -> lager:debug("no attachment named ~s", [AttachmentId]);
             _AttachmentMeta ->
                 lager:debug("deleting old attachment ~s", [AttachmentId]),
-                kz_datamgr:delete_attachment(cb_context:account_db(Context), Id, AttachmentId)
+                kz_datamgr:delete_attachment(cb_context:db_name(Context), Id, AttachmentId)
         end,
     crossbar_doc:save_attachment(Id, AttachmentId, Contents, Context, Options).
 
@@ -441,17 +436,10 @@ post(Context, Id, ?PORT_ATTACHMENT, AttachmentId) ->
 %%------------------------------------------------------------------------------
 -spec delete(cb_context:context(), path_token()) -> cb_context:context().
 delete(Context, _Id) ->
-    case phonebook:maybe_cancel_port_in(Context) of
-        {'ok', _} ->
-            crossbar_doc:delete(Context);
-        {'error', {Code, Response}} ->
-            handle_phonebook_error(Context, Code, Response);
-        {'error', Message} ->
-            cb_context:add_system_error('datastore_fault', Message, Context)
-    end.
+    crossbar_doc:delete(Context).
 
 -spec delete(cb_context:context(), path_token(), path_token(), path_token()) ->
-                    cb_context:context().
+          cb_context:context().
 delete(Context, Id, ?PORT_ATTACHMENT, AttachmentName) ->
     crossbar_doc:delete_attachment(Id, AttachmentName, Context).
 
@@ -469,7 +457,7 @@ save(Context) ->
     NewDoc = kzd_accounts:set_tree(NewDoc1, kzd_accounts:tree(cb_context:account_doc(Context))),
     NewerDoc = kz_json:delete_keys([<<"reason">> | knm_port_request:public_fields()], NewDoc),
     Context1 = cb_context:setters(Context
-                                 ,[{fun cb_context:set_account_db/2, ?KZ_PORT_REQUESTS_DB}
+                                 ,[{fun cb_context:set_db_name/2, ?KZ_PORT_REQUESTS_DB}
                                   ,{fun cb_context:set_doc/2, NewerDoc}
                                   ]
                                  ),
@@ -486,7 +474,7 @@ save_and_send_comments(Context, _, []) ->
             Context1
     end;
 save_and_send_comments(Context, Id, NewComments) ->
-    case phonebook:maybe_add_comment(Context, NewComments) of
+    case cb_modules_util:phonebook_comment(Context, NewComments) of
         {'ok', _} ->
             Context1 = save(Context),
             case cb_context:resp_status(Context1) of
@@ -498,10 +486,8 @@ save_and_send_comments(Context, Id, NewComments) ->
                 _ ->
                     Context1
             end;
-        {'error', {Code, Response}} ->
-            handle_phonebook_error(Context, Code, Response);
-        {'error', Message} ->
-            cb_context:add_system_error('datastore_fault', Message, Context)
+        {'error', Error} ->
+            handle_phonebook_error(Context, Error)
     end.
 
 -spec save_then_maybe_notify(cb_context:context(), kz_term:ne_binary(), kz_term:ne_binary()) -> cb_context:context().
@@ -520,7 +506,7 @@ save_then_maybe_notify(Context, PortId, NewState) ->
 -spec maybe_set_scheduled_date_from_schedule_on(kz_json:object()) -> kz_json:object().
 maybe_set_scheduled_date_from_schedule_on(Doc) ->
     case kz_json:get_ne_value(<<"schedule_on">>, Doc) of
-        undefined -> Doc;
+        'undefined' -> Doc;
         DateJObj ->
             TZ = kz_json:get_ne_binary_value(<<"timezone">>, DateJObj),
             Datetime = kz_json:get_ne_binary_value(<<"date_time">>, DateJObj),
@@ -552,18 +538,95 @@ date_as_configured_timezone(Date, Time, FromTimezone) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec handle_phonebook_error(cb_context:context(), integer(), kz_json:object()) -> cb_context:context().
-handle_phonebook_error(Context, Code, Response) ->
-    Ctx = cb_context:setters(Context, [{fun cb_context:set_resp_error_code/2, Code}
-                                      ,{fun cb_context:set_resp_status/2, 'error'}
-                                      ,{fun cb_context:set_resp_error_msg/2, kz_json:get_ne_binary_value(<<"message">>, Response)}
-                                      ,{fun cb_context:set_validation_errors/2, kz_json:get_value(<<"data">>, Response)}
-                                      ]),
-    Env = cb_context:resp_envelope(Ctx),
-    Env1 = kz_json:set_values([{<<"passthrough">>, true}
+-spec handle_phonebook_error(cb_context:context(), knm_phonebook:errors()) -> cb_context:context().
+handle_phonebook_error(Context, #{code := Code
+                                 ,payload := Payload
+                                 ,reason := 'bad_phonebook'
+                                 }=Error) ->
+    Env = cb_context:resp_envelope(Context),
+    Env1 = kz_json:set_values([{<<"passthrough">>, 'true'}
                               ,{<<"error_format">>, <<"phonebook">>}
                               ], Env),
-    cb_context:set_resp_envelope(Ctx, Env1).
+    Setters = [{fun cb_context:set_resp_error_code/2, Code}
+              ,{fun cb_context:set_resp_status/2, 'error'}
+              ,{fun cb_context:set_resp_error_msg/2, <<"request is rejected by port automation system">>}
+              ,{fun cb_context:set_validation_errors/2, kz_json:get_value(<<"data">>, Payload, kz_json:new())}
+              ,{fun cb_context:set_resp_envelope/2, Env1}
+              ],
+    Context1 = maybe_reject_port(Context, Error),
+    case cb_context:resp_status(Context1) of
+        'success' ->
+            %% returning successful failure
+            Context1;
+        _ ->
+            %% for port_in: even rejecting the port is failed, shame!
+            %% for add_comment: to let client know why comment did not added
+            cb_context:setters(Context, Setters)
+    end;
+handle_phonebook_error(Context, #{payload := Payload}) ->
+    cb_context:add_system_error('datastore_fault', kz_json:get_value(<<"message">>, Payload), Context).
+
+%% Adding a second to transition timestamp, because the port is just transitioned
+%% to submitted and it is immediately transitioning to rejected so if the seconds are same
+%% this could cause the UI to not showing the 'Fix' button.
+-define(IMMEDIATELY_REJECTION_FUDGE_SECONDS, 1).
+
+-spec maybe_reject_port(cb_context:context(), knm_phonebook:errors()) -> cb_context:context().
+maybe_reject_port(Context, #{code := Code
+                            ,req_type := 'port_in'
+                            ,payload := Payload
+                            }) ->
+    lager:debug("phonebook submission failed, rejecting the port request"),
+    Reason = <<"There was some issue with your port request. Please wait while we investigate the issue.">>,
+    PhonebookPayload = kz_json:from_list(
+                         [{<<"http_code">>, kz_term:to_binary(Code)}
+                         ,{<<"payload">>, Payload}
+                         ]),
+    CommentText = kz_term:to_binary(
+                    ["Phonebook/carrier reject to submit port request.\n "
+                    ,kz_json:encode(Payload, ['pretty'])
+                    ]),
+    Comment = kz_doc:setters(
+                [{fun kzd_comment:set_account_id/2, cb_context:auth_account_id(Context)}
+                ,{fun kzd_comment:set_action_required/2, 'false'}
+                ,{fun kzd_comment:set_author/2, <<"Port Automation">>}
+                ,{fun kzd_comment:set_content/2, CommentText}
+                ,{fun kzd_comment:set_is_private/2, 'true'}
+                ,{fun kzd_comment:set_timestamp/2, kz_time:now_s()}
+                ]),
+    Metadata = knm_port_request:transition_metadata(cb_context:auth_account_id(Context)
+                                                   ,cb_context:auth_user_id(Context)
+                                                   ,Reason
+                                                   ,kz_time:now_s() + ?IMMEDIATELY_REJECTION_FUDGE_SECONDS
+                                                   ),
+    Context1 = move_state(Context, ?PORT_REJECTED, Metadata),
+    case cb_context:resp_status(Context1) of
+        'success' ->
+            send_port_comment_notifications(Context, kz_doc:id(cb_context:doc(Context)), [Comment]),
+            Doc = cb_context:doc(Context1),
+            DocSetters = [{fun kzd_port_requests:set_comments/2, kzd_port_requests:comments(Doc, []) ++ [Comment]}
+                         ,{fun kzd_port_requests:set_pvt_last_phonebook_error/2, PhonebookPayload}
+                         ],
+            CtxSetters = [{fun cb_context:set_doc/2, kz_doc:setters(Doc, DocSetters)}
+                         ,{fun cb_context:store/3, 'req_comments', []}
+                         ],
+            Context2 = save(cb_context:setters(Context1, CtxSetters)),
+            case cb_context:resp_status(Context2) of
+                'success' ->
+                    lager:debug("congratulation, port submission has been successfully rejected"),
+                    Context2;
+                _ ->
+                    lager:warning("failed to save rejected port request, halp"),
+                    Context2
+            end;
+        _ ->
+            lager:warning("failed to reject port request, halp"),
+            Context1
+    end;
+maybe_reject_port(Context, _) ->
+    %% changing resp_status so we return phonebook error above why adding comment is failed
+    Context1 = cb_context:store(Context, 'req_comments', []),
+    cb_context:add_system_error('datastore_fault', <<"unable to submit comment to carrier">>, Context1).
 
 -spec handle_phonebook_response(cb_context:context(), kz_json:object()) -> cb_context:context().
 handle_phonebook_response(Context, Response) ->
@@ -601,7 +664,7 @@ fix_phonebook_comments(Comment) ->
 %%------------------------------------------------------------------------------
 -spec load_port_request(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
 load_port_request(Context, Id) ->
-    Context1 = cb_context:set_account_db(Context, ?KZ_PORT_REQUESTS_DB),
+    Context1 = cb_context:set_db_name(Context, ?KZ_PORT_REQUESTS_DB),
     Context2 = crossbar_doc:load(Id, Context1, ?TYPE_CHECK_OPTION(?TYPE_PORT_REQUEST)),
     case cb_context:resp_status(Context2) =:= 'success' of
         'false' -> Context2;
@@ -615,7 +678,7 @@ load_port_request(Context, Id) ->
     end.
 
 -spec patch_then_validate_then_maybe_transition(cb_context:context(), kz_term:ne_binary(), kz_term:ne_binary()) ->
-                                                       cb_context:context().
+          cb_context:context().
 patch_then_validate_then_maybe_transition(Context, PortId, ToState) ->
     OnSuccess = fun(C) ->
                         validate_port_comments(C, fun(OtherC) -> maybe_move_state(OtherC, ToState) end)
@@ -625,7 +688,7 @@ patch_then_validate_then_maybe_transition(Context, PortId, ToState) ->
                   end,
     Comments = kzd_port_requests:comments(cb_context:req_data(Context), []),
     Setters = [{fun cb_context:store/3, 'req_comments', Comments}
-              ,{fun cb_context:set_account_db/2, ?KZ_PORT_REQUESTS_DB}
+              ,{fun cb_context:set_db_name/2, ?KZ_PORT_REQUESTS_DB}
               ],
     Context1 = cb_context:setters(Context, Setters),
     LoadOptions = ?TYPE_CHECK_OPTION(?TYPE_PORT_REQUEST),
@@ -640,11 +703,12 @@ patch_then_validate_then_maybe_transition(Context, PortId, ToState) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec validate_port_comments(cb_context:context(), fun((cb_context:context()) -> cb_context:context())) ->
-                                    cb_context:context().
+          cb_context:context().
 validate_port_comments(Context, OnSuccess) ->
     validate_port_comments(Context, OnSuccess, get_new_comments(Context)).
 
--spec validate_port_comments(cb_context:context(), fun((cb_context:context()) -> cb_context:context()), kz_json:ojbects()) -> cb_context:context().
+-spec validate_port_comments(cb_context:context(), fun((cb_context:context()) -> cb_context:context()), kz_json:objects()) ->
+          cb_context:context().
 validate_port_comments(Context, OnSuccess, []) ->
     Doc = cb_context:doc(Context),
     Comments = kzd_port_requests:comments(Doc, []),
@@ -680,15 +744,21 @@ validate_comments(Context, NewComments, 'false') ->
         [] ->
             add_commentors_info(Context, NewComments);
         [_|_] ->
-            Msg = kz_json:from_list(
-                    [{<<"message">>, <<"you're not allowed to make private comment or set action_required">>}
-                    ,{<<"cause">>, <<"comments">>}
+            Msg = kz_json:from_list_recursive(
+                    [{<<"comments">>
+                     ,[{<<"forbidden">>
+                       ,[{<<"message">>, <<"you're not allowed to make private comment or set action_required">>}
+                        ,{<<"cause">>, <<"comments">>}
+                        ]
+                       }
+                      ]
+                     }
                     ]),
-            cb_context:add_validation_error(<<"comments">>, <<"forbidden">>, Msg, Context)
+            cb_context:add_system_error('forbidden', Msg, Context)
     end;
 validate_comments(Context, NewComments, 'true') ->
-    Filters = [{kzd_comment:superduper_comment_path(), fun kz_term:is_false/1} %% old key
-              ,{kzd_comment:is_private_path(), fun kz_term:is_false/1}
+    Filters = [{kzd_comment:superduper_comment_path(), fun kz_term:is_true/1} %% old key
+              ,{kzd_comment:is_private_path(), fun kz_term:is_true/1}
               ],
     case [Comment
           || Comment <- run_comment_filter(NewComments, Filters),
@@ -699,10 +769,10 @@ validate_comments(Context, NewComments, 'true') ->
             add_commentors_info(Context, NewComments);
         [_|_] ->
             Msg = kz_json:from_list(
-                    [{<<"message">>, <<"setting action_required on public comment is not allowed">>}
+                    [{<<"message">>, <<"setting action_required on private comment is not allowed">>}
                     ,{<<"cause">>, <<"comments">>}
                     ]),
-            cb_context:add_validation_error(<<"comments">>, <<"forbidden">>, Msg, Context)
+            cb_context:add_validation_error(<<"comments">>, <<"rejected">>, Msg, Context)
     end.
 
 -spec add_commentors_info(cb_context:context(), kz_json:objects()) -> cb_context:context().
@@ -898,7 +968,7 @@ load_summary_by_type(Context, Type) ->
                | by_types_view_options(Context, Type, IsRanged, AuthorityType)
               ],
     case IsRanged of
-        'true' -> crossbar_view:load_range(Context, View, Options);
+        'true' -> crossbar_view:load_time_range(Context, View, Options);
         'false' -> crossbar_view:load(Context, View, Options)
     end.
 
@@ -980,7 +1050,7 @@ load_summary_by_number(Context, Number) ->
     crossbar_view:load(Context, ?LISTING_BY_NUMBER, Options).
 
 -spec normalize_number_summarize_results(cb_context:context(), kz_json:object(), kz_json:objects()) ->
-                                                kz_json:objects().
+          kz_json:objects().
 normalize_number_summarize_results(Context, JObj, Acc) ->
     AccountId = case cb_context:account_id(Context) of
                     'undefined' -> cb_context:auth_account_id(Context);
@@ -1034,8 +1104,8 @@ transitions_to_submitted(Timeline) ->
 
 -spec prepare_timeline(cb_context:context(), kz_json:object()) -> kz_json:objects().
 prepare_timeline(Context, Doc) ->
-    Comments = kz_json:get_list_value(<<"comments">>, filter_private_comments(Context, Doc), []),
-    Transitions = kz_json:get_list_value(?PORT_PVT_TRANSITIONS, Doc, []),
+    Comments = kzd_port_requests:comments(filter_private_comments(Context, Doc), []),
+    Transitions = kzd_port_requests:pvt_transitions(Doc, []),
     Indexed = [{kz_json:get_integer_value(?TRANSITION_TIMESTAMP, JObj), JObj}
                || JObj <- Comments ++ Transitions
               ],
@@ -1061,7 +1131,7 @@ filter_private_comments(Context, JObj) ->
     end.
 
 -spec run_comment_filter([kzd_comment:doc()], [{kz_json:get_key(), fun((kz_json:json_term()) -> boolean())}]) ->
-                                [kzd_comment:doc()].
+          [kzd_comment:doc()].
 run_comment_filter(Comments, Filters) ->
     [Comment
      || Comment <- Comments,
@@ -1077,7 +1147,7 @@ run_comment_filter(Comments, Filters) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec normalize_view_results(kz_json:object(), kz_json:objects()) ->
-                                    kz_json:objects().
+          kz_json:objects().
 normalize_view_results(Res, Acc) ->
     [leak_pvt_fields(Res, knm_port_request:public_fields(kz_json:get_value(<<"doc">>, Res)))
      | Acc
@@ -1115,7 +1185,7 @@ on_successful_validation(Context, 'undefined') ->
     on_successful_validation(Context, 'undefined', 'true');
 on_successful_validation(Context, Id) ->
     Context1 = crossbar_doc:load_merge(Id
-                                      ,cb_context:set_account_db(Context, ?KZ_PORT_REQUESTS_DB)
+                                      ,cb_context:set_db_name(Context, ?KZ_PORT_REQUESTS_DB)
                                       ,?TYPE_CHECK_OPTION(?TYPE_PORT_REQUEST)
                                       ),
     on_successful_validation(Context1, Id, can_update_port_request(Context1)).
@@ -1138,7 +1208,7 @@ on_successful_validation(Context, Id, 'true') ->
         _ -> Context1
     end;
 on_successful_validation(Context, _Id, 'false') ->
-    PortState = kz_json:get_value(?PORT_PVT_STATE, cb_context:doc(Context)),
+    PortState = kzd_port_requests:pvt_port_state(cb_context:doc(Context)),
     lager:debug("port state ~s is not valid for updating a port request", [PortState]),
     Msg = kz_json:from_list(
             [{<<"message">>, <<"Updating port requests not allowed in current port state">>}
@@ -1185,38 +1255,29 @@ successful_validation(Context, _Id) ->
     Normalized = knm_port_request:normalize_numbers(cb_context:doc(Context)),
     cb_context:set_doc(Context, Normalized).
 
--spec fetch_by_number(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
-fetch_by_number(Context, Number) ->
-    Options = [{'keymap', Number}
-              ,{'databases', [?KZ_PORT_REQUESTS_DB]}
-              ,{'unchunkable', 'true'}
-              ,{'should_paginate', 'false'}
-              ],
-    crossbar_view:load(Context, ?PORT_REQ_NUMBERS, Options).
-
 %%------------------------------------------------------------------------------
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
 -spec check_number_portability(kz_term:api_binary(), kz_term:ne_binary(), cb_context:context()) ->
-                                      cb_context:context().
+          cb_context:context().
 check_number_portability(PortId, Number, Context) ->
     E164 = knm_converters:normalize(Number),
     lager:debug("checking ~s(~s) for portability", [E164, Number]),
-    Context1 = fetch_by_number(Context, E164),
-    case cb_context:resp_status(Context1) of
-        'success' ->
-            DataResp = cb_context:resp_data(Context1),
-            check_number_portability(PortId, Number, Context1, E164, DataResp);
-        _ -> Context1
+    case knm_port_request:get_portin_number(cb_context:account_id(Context), E164) of
+        {'error', Reason}->
+            lager:debug("failed to check ports for number portability: ~p", [Reason]),
+            crossbar_doc:handle_datamgr_errors(Reason, PortId, Context);
+        {'ok', Result} ->
+            check_number_portability(PortId, Number, Context, E164, Result)
     end.
 
 -spec check_number_portability(kz_term:api_binary(), kz_term:ne_binary(), cb_context:context(), kz_term:ne_binary(), kz_json:objects()) ->
-                                      cb_context:context().
+          cb_context:context().
 check_number_portability(_PortId, Number, Context, E164, []) ->
     check_number_existence(E164, Number, Context);
 check_number_portability(PortId, Number, Context, E164, [PortReq]) ->
-    case {kz_json:get_value(<<"value">>, PortReq) =:= cb_context:account_id(Context)
+    case {kz_doc:account_id(PortReq) =:= cb_context:account_id(Context)
          ,kz_doc:id(PortReq) =:= PortId
          }
     of
@@ -1231,7 +1292,7 @@ check_number_portability(PortId, Number, Context, E164, [PortReq]) ->
             number_validation_error(Context, Number, Message);
         {'false', _} ->
             lager:debug("number ~s(~s) is on existing port request for other account(~s)"
-                       ,[E164, Number, kz_json:get_value(<<"value">>, PortReq)]),
+                       ,[E164, Number, kz_doc:account_id(PortReq)]),
             Message = <<"Number is being ported for a different account">>,
             number_validation_error(Context, Number, Message)
     end;
@@ -1242,7 +1303,7 @@ check_number_portability(_PortId, Number, Context, E164, [_|_]) ->
     number_validation_error(Context, Number, Msg).
 
 -spec number_validation_error(cb_context:context(), kz_term:ne_binary(), kz_term:ne_binary()) ->
-                                     cb_context:context().
+          cb_context:context().
 number_validation_error(Context, Number, Message) ->
     Msg = kz_json:from_list([{<<"message">>, Message}
                             ,{<<"cause">>, Number}
@@ -1254,9 +1315,9 @@ number_validation_error(Context, Number, Message) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec check_number_existence(kz_term:ne_binary(), kz_term:ne_binary(), cb_context:context()) ->
-                                    cb_context:context().
+          cb_context:context().
 check_number_existence(E164, Number, Context) ->
-    case knm_number:lookup_account(E164) of
+    case knm_numbers:lookup_account(E164) of
         {'ok', _AccountId, _} ->
             lager:debug("number ~s exists and belongs to ~s", [E164, _AccountId]),
             number_validation_error(Context, Number, <<"Number exists on the system already">>);
@@ -1279,7 +1340,7 @@ check_number_existence(E164, Number, Context) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec load_attachment(kz_term:ne_binary(), kz_term:ne_binary(), cb_context:context()) ->
-                             cb_context:context().
+          cb_context:context().
 load_attachment(Id, AttachmentId, Context) ->
     Context1 = read(Context, Id),
     case cb_context:resp_status(Context1) of
@@ -1296,7 +1357,7 @@ load_attachment(AttachmentId, Context) ->
     Context1 = crossbar_doc:load_attachment(cb_context:doc(Context)
                                            ,AttachmentId
                                            ,?TYPE_CHECK_OPTION(?TYPE_PORT_REQUEST)
-                                           ,cb_context:set_account_db(Context, ?KZ_PORT_REQUESTS_DB)
+                                           ,cb_context:set_db_name(Context, ?KZ_PORT_REQUESTS_DB)
                                            ),
     Headers =
         #{<<"content-disposition">> => <<"attachment; filename=", AttachmentId/binary>>
@@ -1313,6 +1374,12 @@ maybe_move_state(Context, PortState, 'success') ->
                                                    ,cb_context:auth_user_id(Context)
                                                    ,cb_context:req_value(Context, ?REQ_TRANSITION)
                                                    ),
+    move_state(Context, PortState, Metadata);
+maybe_move_state(Context, _, _) ->
+    Context.
+
+-spec move_state(cb_context:context(), kz_term:ne_binary(), knm_port_request:transition_metadata()) -> cb_context:context().
+move_state(Context, PortState, Metadata) ->
     try knm_port_request:attempt_transition(cb_context:doc(Context), Metadata, PortState) of
         {'ok', PortRequest} ->
             lager:debug("loaded new port request state ~s", [PortState]),
@@ -1337,21 +1404,19 @@ maybe_move_state(Context, PortState, 'success') ->
     catch
         'throw':{'error', 'failed_to_charge'} ->
             cb_context:add_system_error('no_credit', Context)
-    end;
-maybe_move_state(Context, _, _) ->
-    Context.
+    end.
 
 %%------------------------------------------------------------------------------
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
 -spec generate_loa(cb_context:context()) ->
-                          cb_context:context().
+          cb_context:context().
 generate_loa(Context) ->
     generate_loa(Context, cb_context:resp_status(Context)).
 
 -spec generate_loa(cb_context:context(), crossbar_status()) ->
-                          cb_context:context().
+          cb_context:context().
 generate_loa(Context, 'success') ->
     generate_loa_from_port(Context, cb_context:doc(Context));
 generate_loa(Context, _RespStatus) ->
@@ -1366,7 +1431,7 @@ find_template(ResellerId, 'undefined') ->
     {'ok', Template} = kz_pdf:find_template(ResellerId, <<"loa">>),
     Template;
 find_template(ResellerId, CarrierName) ->
-    EncodedCarrierName = kz_term:to_lower_binary(kz_util:uri_encode(CarrierName)),
+    EncodedCarrierName = kz_term:to_lower_binary(kz_http_util:urlencode(CarrierName)),
     TemplateName = <<EncodedCarrierName/binary, ".tmpl">>,
     lager:debug("looking for carrier template ~s or plain template for reseller ~s"
                ,[TemplateName, ResellerId]),
@@ -1398,7 +1463,7 @@ port_state_change_notify(Context, Id, State) ->
             lager:debug("failed to send the  port ~s notification, maybe reverting the state change: ~s:~p"
                        ,[State, _E, _R]
                        ),
-            maybe_revert_patch(Context, phonebook:should_send_to_phonebook(Context))
+            maybe_revert_patch(Context, cb_modules_util:should_send_to_phonebook(Context))
     end.
 
 -spec state_change_notify_fun(kz_term:ne_binary()) -> function().
@@ -1438,9 +1503,7 @@ maybe_revert_patch(Context, 'false') ->
     Rev = kz_doc:revision(Doc),
     RevertedDoc = kz_doc:set_revision(DBDoc, Rev),
     _ = crossbar_doc:save(cb_context:set_doc(Context, RevertedDoc)),
-    Msg = kz_json:from_list(
-            [{<<"message">>, <<"failed to send port state change email notification">>}
-            ]),
+    Msg = kz_json:from_list([{<<"message">>, <<"failed to send port state change email notification">>}]),
     cb_context:add_system_error('bad_gateway', Msg, Context).
 
 %%------------------------------------------------------------------------------
@@ -1471,7 +1534,7 @@ send_port_comment_notifications(Context, Id, NewComments) ->
     'ok'.
 
 -spec send_port_comment_notification(kz_json:object(), {cb_context:context(), kz_term:ne_binary(), non_neg_integer(), non_neg_integer()}) ->
-                                            {cb_context:context(), kz_term:ne_binary(), non_neg_integer(), non_neg_integer()}.
+          {cb_context:context(), kz_term:ne_binary(), non_neg_integer(), non_neg_integer()}.
 send_port_comment_notification(NewComment, {Context, Id, TotalNew, Index}) ->
     Setters = [{fun kzd_comment:set_user_id/2, kzd_comment:user_id(NewComment, cb_context:auth_user_id(Context))}
               ,{fun kzd_comment:set_account_id/2, kzd_comment:account_id(NewComment, cb_context:auth_account_id(Context))}
@@ -1499,7 +1562,7 @@ send_port_comment_notification(NewComment, {Context, Id, TotalNew, Index}) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec generate_loa_from_port(cb_context:context(), kz_json:object()) ->
-                                    cb_context:context().
+          cb_context:context().
 generate_loa_from_port(Context, PortRequest) ->
     AccountId = cb_context:account_id(Context),
     ResellerId = kz_services_reseller:get_id(AccountId),

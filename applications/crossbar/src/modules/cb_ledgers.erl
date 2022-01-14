@@ -1,8 +1,13 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2019, 2600Hz
+%%% @copyright (C) 2011-2020, 2600Hz
 %%% @doc
 %%% @author Peter Defebvre
 %%% @author Luis Azedo
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(cb_ledgers).
@@ -106,8 +111,8 @@ authorize(Context, Path) ->
     end.
 
 -spec authorize_request(cb_context:context(), path_token(), http_method()) ->
-                               boolean() |
-                               {'stop', cb_context:context()}.
+          boolean() |
+          {'stop', cb_context:context()}.
 authorize_request(Context, ?DEBIT, ?HTTP_PUT) ->
     authorize_create(Context);
 authorize_request(Context, ?CREDIT, ?HTTP_PUT) ->
@@ -118,7 +123,7 @@ authorize_request(Context, _, ?HTTP_PUT) ->
     {'stop', cb_context:add_system_error('forbidden', Context)}.
 
 -spec authorize_create(cb_context:context()) -> boolean() |
-                                                {'stop', cb_context:context()}.
+          {'stop', cb_context:context()}.
 authorize_create(Context) ->
     IsAuthenticated = cb_context:is_authenticated(Context),
     IsSuperDuperAdmin = cb_context:is_superduper_admin(Context),
@@ -176,7 +181,7 @@ validate(Context, SourceService) ->
 
 -spec validate(cb_context:context(), path_token(), path_token()) -> cb_context:context().
 validate(Context, ?SUMMARY, ModbSuffix) ->
-    case get_modb_suffix(ModbSuffix) of
+    case kazoo_modb_util:get_modb_suffix(ModbSuffix) of
         {'undefined', 'undefined'} ->
             crossbar_util:response_bad_identifier(ModbSuffix, Context);
         {Year, Month} ->
@@ -193,7 +198,7 @@ validate(Context, SourceService, Id) ->
     end.
 
 -spec validate_fetch_ledger(cb_context:context(), kz_term:ne_binary(), kz_ledger:ledger()) ->
-                                   cb_context:context().
+          cb_context:context().
 validate_fetch_ledger(Context, SourceService, Ledger) ->
     case kz_ledger:source_service(Ledger) =:= SourceService of
         'true' ->
@@ -298,7 +303,7 @@ fetch_summary(Context, View, Options) ->
     ViewOptions = [{'group', 'true'}
                   ,{'reduce', 'true'}
                   ,{'unchunkable', 'true'}
-                  ,{'nofilter', 'true'}
+                  ,{'no_filter', 'true'}
                   ,{'should_paginate', 'false'}
                    | Options
                   ],
@@ -321,7 +326,7 @@ summary(Context) ->
 -spec summary(cb_context:context(), kz_term:proplist()) -> cb_context:context().
 summary(Context, Options) ->
     ViewOptions = [{'group_level', 0}
-                  ,{'mapper', crossbar_view:map_value_fun()}
+                  ,{'mapper', crossbar_view:get_value_fun()}
                    | Options
                   ],
 
@@ -334,7 +339,7 @@ summary(Context, Options) ->
 -spec account_summary(cb_context:context(), kz_term:ne_binary()) ->cb_context:context().
 account_summary(Context, MODB) ->
     Options = [{'databases', [MODB]}
-              ,{'group_level', 2}
+              ,{'group_level', 1}
               ,{'mapper', fun normalize_summary_by_account/2}
               ,{'range_keymap', 'nil'}
               ],
@@ -352,7 +357,7 @@ summary_to_dollars(Summary) ->
     kz_json:expand(kz_json:from_list(ConvertedUnits)).
 
 -spec maybe_convert_units(kz_term:ne_binary(), kz_json:keys(), kz_currency:units() | T) ->
-                                 kz_currency:dollars() | T when T::any().
+          kz_currency:dollars() | T when T::any().
 maybe_convert_units(<<"amount">>, _, Units) when is_integer(Units) ->
     kz_currency:units_to_dollars(Units);
 maybe_convert_units(_, [_AccountId, <<"total">>], Units) ->
@@ -419,7 +424,7 @@ maybe_impact_reseller(Context, AccountLedger, 'true', ResellerId) ->
 
 -spec build_response(kz_term:ne_binary(), kz_json:object()
                     ,kz_term:ne_binary(), kz_json:object()) ->
-                            kz_json:object().
+          kz_json:object().
 build_response(AccountId, AccountResponse, ResellerId, ResellerResponse) ->
     kz_json:from_list(
       [{AccountId, AccountResponse},
@@ -450,24 +455,8 @@ build_success_response(AccountId, Ledger) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec get_modb_suffix(kz_term:ne_binary()) -> {kz_term:api_integer(), kz_term:api_integer()}.
-get_modb_suffix(<<YearBin:4/binary, MonthBin:2/binary>>) ->
-    {kz_term:safe_cast(YearBin, 'undefined', fun kz_term:to_integer/1)
-    ,kz_term:safe_cast(MonthBin, 'undefined', fun kz_term:to_integer/1)
-    };
-get_modb_suffix(<<YearBin:4/binary, MonthBin:1/binary>>) ->
-    {kz_term:safe_cast(YearBin, 'undefined', fun kz_term:to_integer/1)
-    ,kz_term:safe_cast(MonthBin, 'undefined', fun kz_term:to_integer/1)
-    };
-get_modb_suffix(_) ->
-    {'undefined', 'undefined'}.
-
-%%------------------------------------------------------------------------------
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
 -spec normalize_view_results(cb_context:context(), kzd_ledgers:doc(), kz_json:objects()) ->
-                                    kz_json:objects().
+          kz_json:objects().
 normalize_view_results(_Context, JObj, Acc) ->
     [normalize_view_result(kz_json:get_value(<<"doc">>, JObj)) | Acc].
 
@@ -481,7 +470,7 @@ normalize_view_result(LedgerJObj) ->
 %%------------------------------------------------------------------------------
 -spec normalize_summary_by_account(kz_json:objects(), kz_json:objects()) -> kz_json:objects().
 normalize_summary_by_account(JObj, Acc) ->
-    AccountId = kz_json:get_value(<<"key">>, JObj),
+    [AccountId|_] = kz_json:get_value(<<"key">>, JObj),
     Ledger = normalize_ledger_jobj(AccountId, kz_json:get_value(<<"value">>, JObj)),
     [kz_json:sum_jobjs([Ledger | Acc])].
 

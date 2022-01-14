@@ -30,6 +30,9 @@
         "Bridge-Actions": {
             "type": "object"
         },
+        "Call-Context": {
+            "type": "string"
+        },
         "Call-ID": {
             "type": "string"
         },
@@ -119,6 +122,9 @@
         "Force-Fax": {
             "type": "string"
         },
+        "From": {
+            "type": "string"
+        },
         "From-Realm": {
             "type": "string"
         },
@@ -181,8 +187,8 @@
         },
         "Route-Type": {
             "enum": [
-                "on-net",
-                "off-net"
+                "onnet",
+                "offnet"
             ],
             "type": "string"
         },
@@ -207,6 +213,9 @@
             "type": "string"
         },
         "Timeout": {
+            "type": "string"
+        },
+        "To": {
             "type": "string"
         },
         "To-Realm": {

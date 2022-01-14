@@ -1,8 +1,13 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc Handles stop recording.
 %%%
 %%% @author Luis Azedo
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(media_recording).
@@ -63,7 +68,7 @@ start_link() ->
 
 -spec handle_record_stop(kz_json:object(), kz_term:proplist()) -> 'ok'.
 handle_record_stop(JObj, Props) ->
-    kz_util:put_callid(JObj),
+    kz_log:put_callid(JObj),
     Pid = props:get_value('server', Props),
     maybe_save_recording(Pid, JObj).
 
@@ -98,7 +103,7 @@ handle_cast({'store_failed', #{retries := Retries} = Store, Error}, State) ->
     lager:debug("store failed : ~p, retrying ~p more times, next in ~p minute(s)"
                ,[Error, Retries, Sleep / ?MILLISECONDS_IN_MINUTE]
                ),
-    timer:send_after(Sleep, self(), {'retry_storage', Store}),
+    _ = timer:send_after(Sleep, self(), {'retry_storage', Store}),
     {'noreply', State};
 handle_cast({'gen_listener',{'created_queue', Queue}}, State) ->
     {'noreply', State#{queue => Queue}};
@@ -119,7 +124,7 @@ handle_cast(_Msg, State) ->
 %%------------------------------------------------------------------------------
 -spec handle_info(any(), state()) -> kz_types:handle_info_ret_state(state()).
 handle_info({'retry_storage', #{retries := Retries} = Store}, State) ->
-    _ = kz_util:spawn(fun() -> save_recording(Store#{retries => Retries - 1}) end),
+    _ = kz_process:spawn(fun() -> save_recording(Store#{retries => Retries - 1}) end),
     {'noreply', State};
 
 handle_info(_Info, State) ->
@@ -333,7 +338,7 @@ should_store_recording(AccountId, Url) ->
 
 -spec maybe_storage_plan(kz_term:ne_binary()) -> store_url().
 maybe_storage_plan(AccountId) ->
-    AccountDb = kz_util:format_account_mod_id(AccountId),
+    AccountDb = kzs_util:format_account_mod_id(AccountId),
     Plan = kzs_plan:get_dataplan(AccountDb, <<"call_recording">>),
     case maps:get('tag', Plan, <<"local">>) =/= <<"local">>
         orelse maps:is_key('att_handler', Plan) of
@@ -371,7 +376,7 @@ store_recording({DirName, MediaName}, StoreUrl, #{event := JObj, pid := Pid} = M
     end.
 
 maybe_save_recording(Pid, JObj) ->
-    kz_util:put_callid(JObj),
+    kz_log:put_callid(JObj),
     maybe_save_recording(kz_recording:recorder(JObj), Pid, JObj).
 
 maybe_save_recording(?KZ_RECORDER, Pid, JObj) ->
@@ -382,7 +387,7 @@ maybe_save_recording(?KZ_RECORDER, Pid, JObj) ->
     Data = kz_recording:data(JObj, kz_json:new()),
     DocId = kz_recording:id(JObj),
     {Year, Month, _} = erlang:date(),
-    AccountDb = kz_util:format_account_modb(kazoo_modb:get_modb(AccountId, Year, Month),'encoded'),
+    AccountDb = kzs_util:format_account_modb(kazoo_modb:get_modb(AccountId, Year, Month),'encoded'),
     CallId = kz_call_event:call_id(JObj),
     CdrId = ?MATCH_MODB_PREFIX(kz_term:to_binary(Year), kz_date:pad_month(Month), CallId),
     InteractionId = kz_call_event:custom_channel_var(JObj, <<?CALL_INTERACTION_ID>>),
@@ -411,4 +416,4 @@ maybe_save_recording(?KZ_RECORDER, Pid, JObj) ->
              },
     save_recording(Store);
 maybe_save_recording(Recorder, _Pid, _JObj) ->
-     lager:info("recorder ~s not handled", [Recorder]).
+    lager:info("recorder ~s not handled", [Recorder]).

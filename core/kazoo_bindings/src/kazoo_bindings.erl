@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc Store routing keys/`pid' bindings. When a binding is fired,
 %%% pass the payload to the `pid' for evaluation, accumulating
 %%% the results for the response to the running process.
@@ -17,13 +17,17 @@
 %%%
 %%% @author James Aimonetti
 %%% @author Karl Anderson
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kazoo_bindings).
 -behaviour(gen_server).
 
 %% API
--export([start_link/0
+-export([start_link/0, is_running/0
         ,bind/2, bind/3, bind/4
         ,unbind/2, unbind/3, unbind/4
         ,map/2, map/3, pmap/2, pmap/3
@@ -296,6 +300,10 @@ matches(_, _) -> 'false'.
 start_link() ->
     gen_server:start_link({'local', ?SERVER}, ?MODULE, [], []).
 
+-spec is_running() -> boolean().
+is_running() ->
+    is_pid(whereis(?SERVER)).
+
 -spec stop() -> 'ok'.
 stop() -> gen_server:cast(?SERVER, 'stop').
 
@@ -304,22 +312,23 @@ stop() -> gen_server:cast(?SERVER, 'stop').
 -type bind_results() :: [bind_result()].
 
 -spec bind(kz_term:ne_binary() | kz_term:ne_binaries(), responder_fun()) ->
-                  bind_result() | bind_results().
+          bind_result() | bind_results().
 bind(Bindings, Fun) ->
     bind(Bindings, 'undefined', Fun).
 
 -spec bind(kz_term:ne_binary() | kz_term:ne_binaries(), module(), responder_fun()) ->
-                  bind_result() | bind_results().
+          bind_result() | bind_results().
 bind([_|_]=Bindings, Module, Fun) ->
     [bind(Binding, Module, Fun) || Binding <- Bindings];
 bind(Binding, Module, Fun) when is_binary(Binding) ->
     bind(Binding, Module, Fun, 'undefined').
 
 -spec bind(kz_term:ne_binary() | kz_term:ne_binaries(), module(), responder_fun(), payload()) ->
-                  bind_result() | bind_results().
+          bind_result() | bind_results().
 bind([_|_]=Bindings, Module, Fun, Payload) ->
     [bind(Binding, Module, Fun, Payload) || Binding <- Bindings];
-bind(Binding, 'undefined' = Module, Fun, Payload) ->
+bind(Binding, Module, Fun, Payload)
+  when is_function(Fun, 1) ->
     lager:debug("adding binding ~s for ~p (~p)", [Binding, Fun, Payload]),
     gen_server:call(?SERVER, {'bind', Binding, Module, Fun, Payload}, 'infinity');
 bind(Binding, Module, Fun, Payload) ->
@@ -331,19 +340,19 @@ bind(Binding, Module, Fun, Payload) ->
 -type unbind_results() :: [unbind_result()].
 
 -spec unbind(kz_term:ne_binary() | kz_term:ne_binaries(), responder_fun()) ->
-                    unbind_result() | unbind_results().
+          unbind_result() | unbind_results().
 unbind(Bindings, Fun) ->
     unbind(Bindings, 'undefined', Fun).
 
 -spec unbind(kz_term:ne_binary() | kz_term:ne_binaries(), module(), responder_fun()) ->
-                    unbind_result() | unbind_results().
+          unbind_result() | unbind_results().
 unbind([_|_]=Bindings, Module, Fun) ->
     [unbind(Binding, Module, Fun) || Binding <- Bindings];
 unbind(Binding, Module, Fun) when is_binary(Binding) ->
     unbind(Binding, Module, Fun, 'undefined').
 
 -spec unbind(kz_term:ne_binary() | kz_term:ne_binaries(), module(), responder_fun(), payload()) ->
-                    unbind_result() | unbind_results().
+          unbind_result() | unbind_results().
 unbind([_|_]=Bindings, Module, Fun, Payload) ->
     [unbind(Binding, Module, Fun, Payload) || Binding <- Bindings];
 unbind(Binding, Module, Fun, Payload) ->
@@ -398,7 +407,7 @@ gift_data() -> 'ok'.
 %%------------------------------------------------------------------------------
 -spec init([]) -> {'ok', state()}.
 init([]) ->
-    kz_util:put_callid(?DEFAULT_LOG_SYSTEM_ID),
+    kz_log:put_callid(?DEFAULT_LOG_SYSTEM_ID),
     lager:debug("starting bindings server"),
     {'ok', #state{}}.
 
@@ -423,8 +432,8 @@ handle_call({'unbind', Binding, Mod, Fun, Payload}, _, #state{}=State) ->
     {'reply', Resp, State}.
 
 -spec maybe_add_binding(kz_term:ne_binary(), module(), responder_fun(), payload()) ->
-                               'ok' |
-                               {'error', 'exists'}.
+          'ok' |
+          {'error', 'exists'}.
 maybe_add_binding(Binding, Mod, Fun, Payload) ->
     Responder = #kz_responder{module=Mod
                              ,function=Fun
@@ -454,8 +463,8 @@ maybe_add_binding(Binding, Mod, Fun, Payload) ->
     end.
 
 -spec maybe_rm_binding(kz_term:ne_binary(), module(), responder_fun(), payload()) ->
-                              {'ok', 'deleted_binding' | 'updated_binding'} |
-                              {'error', 'not_found'}.
+          {'ok', 'deleted_binding' | 'updated_binding'} |
+          {'error', 'not_found'}.
 maybe_rm_binding(Binding, Mod, Fun, Payload) ->
     Responder = #kz_responder{module=Mod
                              ,function=Fun
@@ -468,8 +477,8 @@ maybe_rm_binding(Binding, Mod, Fun, Payload) ->
     end.
 
 -spec maybe_rm_responder(kz_term:ne_binary(), kz_responder(), kz_binding()) ->
-                                {'ok', 'deleted_binding' | 'updated_binding'} |
-                                {'error', 'not_found'}.
+          {'ok', 'deleted_binding' | 'updated_binding'} |
+          {'error', 'not_found'}.
 maybe_rm_responder(Binding, Responder, #kz_binding{binding_responders=Responders}=Bind) ->
     case queue:member(Responder, Responders) of
         'false' ->
@@ -667,7 +676,7 @@ fold_bind_results([#kz_responder{module=M
         fold_bind_results(Responders, Payload, Route, RespondersLen, ReRunResponders);
         ?STACKTRACE(_T, _E, ST)
         lager:error("excepted: ~s: ~p", [_T, _E]),
-        kz_util:log_stacktrace(ST),
+        kz_log:log_stacktrace(ST),
         fold_bind_results(Responders, Payload, Route, RespondersLen, ReRunResponders)
         end;
 fold_bind_results([#kz_responder{}=_R | Responders]
@@ -698,7 +707,7 @@ log_undefined(M, F, Length, [{RealM, RealF, RealArgs,_}|_]) ->
     ?LOG_DEBUG("in call ~s:~s/~b", [M, F, Length]);
 log_undefined(M, F, Length, ST) ->
     ?LOG_DEBUG("undefined function ~s:~s/~b", [M, F, Length]),
-    kz_util:log_stacktrace(ST).
+    kz_log:log_stacktrace(ST).
 
 log_function_clause(M, F, Length, [{M, F, _Args, _}|_]) ->
     ?LOG_INFO("unable to find function clause for ~s:~s/~b", [M, F, Length]);
@@ -714,7 +723,7 @@ log_function_clause(M, F, Length, [{RealM, RealF, RealArgs, Where}|_ST]) ->
     'ok';
 log_function_clause(M, F, Lenth, ST) ->
     ?LOG_ERROR("no matching function clause for ~s:~s/~p", [M, F, Lenth]),
-    kz_util:log_stacktrace(ST).
+    kz_log:log_stacktrace(ST).
 
 -spec map_processor(kz_term:ne_binary(), payload(), kz_rt_options()) -> map_results().
 map_processor(Routing, Payload, Options) when not is_list(Payload) ->
@@ -813,7 +822,8 @@ map_responders(Acc, Responders, Payload) ->
 
 -spec pmap_responders(map_results(), queue:queue(), payload()) -> map_results().
 pmap_responders(Acc, Responders, Payload) ->
-    plists:map(fun(R) -> apply_map_responder(R, Payload) end
+    LogId = kz_log:get_callid(),
+    plists:map(fun(R) -> kz_log:put_callid(LogId), apply_map_responder(R, Payload) end
               ,queue:to_list(Responders)
               ,[{'processes', 'schedulers'}]
               )
@@ -837,16 +847,16 @@ apply_map_responder(#kz_responder{module=M
         {'EXIT', {'undef', ST}};
         ?STACKTRACE('error', Exp, ST)
         lager:error("exception: error:~p", [Exp]),
-        kz_util:log_stacktrace(ST),
+        kz_log:log_stacktrace(ST),
         {'EXIT', {Exp, ST}};
         ?STACKTRACE(_Type, Exp, ST)
         lager:error("exception: ~s:~p", [_Type, Exp]),
-        kz_util:log_stacktrace(ST),
+        kz_log:log_stacktrace(ST),
         {'EXIT', Exp}
         end.
 
 log_apply(Format, Args) ->
-    Silent = erlang:get('kazoo_bindinds_silent_apply'),
+    Silent = erlang:get('kazoo_bindings_silent_apply'),
     log_apply(Format, Args, Silent).
 
 log_apply(_Format, _Args, 'true') -> 'ok';
@@ -854,8 +864,8 @@ log_apply(Format, Args, _Silent) ->
     lager:debug(Format, Args).
 
 -spec apply_map_responder(module() | 'undefined', responder_fun(), payload()) -> payload().
-apply_map_responder('undefined', Fun, Payload) ->
-    log_apply("applying fun ~p/1", [Fun]),
+apply_map_responder(_M, Fun, Payload)
+  when is_function(Fun, 1) ->
     Fun(Payload);
 apply_map_responder(M, F, Payload) ->
     log_apply("applying ~s:~p/~p", [M, F, length(Payload)]),

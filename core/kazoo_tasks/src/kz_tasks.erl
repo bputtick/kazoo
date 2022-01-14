@@ -1,7 +1,11 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2016-2019, 2600Hz
+%%% @copyright (C) 2016-2020, 2600Hz
 %%% @doc Utilities for tasks validation and stuff.
 %%% @author Pierre Fenoll
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kz_tasks).
@@ -53,11 +57,11 @@
 
 -type input() :: kz_term:api_ne_binary() | kz_json:objects().
 
--type output_header() :: kz_csv:header() | {replace, kz_csv:header()}.
+-type output_header() :: kz_csv:header() | {'replace', kz_csv:header()}.
 
 -type columns() :: sets:set(kz_term:ne_binary()).
 
--type help_error() :: {'error', 'unknown_category_action'}.
+-type help_error() :: {'error', 'unknown_category_action' | 'unknown_category'}.
 
 -type return() :: 'ok' | kz_term:api_ne_binary() |
                   kz_csv:row() | [kz_csv:row()] |
@@ -124,17 +128,17 @@ all() -> view([]).
 %%------------------------------------------------------------------------------
 -spec all(kz_term:ne_binary()) -> kz_json:objects().
 all(?MATCH_ACCOUNT_RAW(AccountId)) ->
-    view([{startkey, [AccountId, kz_time:now_s(), kz_json:new()]}
-         ,{endkey, [AccountId]}
-         ,descending
+    view([{'startkey', [AccountId, kz_time:now_s(), kz_json:new()]}
+         ,{'endkey', [AccountId]}
+         ,'descending'
          ]).
 
 %%------------------------------------------------------------------------------
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec read(id()) -> {ok, kz_json:object()} |
-                    {error, not_found}.
+-spec read(id()) -> {'ok', kz_json:object()} |
+          {'error', 'not_found'}.
 read(TaskId=?NE_BINARY) ->
     case task_by_id(TaskId) of
         [Task] -> {'ok', to_public_json(Task)};
@@ -147,11 +151,13 @@ read(TaskId=?NE_BINARY) ->
 %%------------------------------------------------------------------------------
 -spec new(kz_term:ne_binary(), kz_term:ne_binary()
          ,kz_term:ne_binary(), kz_term:ne_binary(), kz_term:api_pos_integer(), input(), kz_term:api_binary()) ->
-                 {'ok', kz_json:object()} |
-                 help_error() |
-                 {'error', kz_json:object()}.
+          {'ok', kz_json:object()} |
+          help_error() |
+          {'error', kz_json:object()}.
 new(?MATCH_ACCOUNT_RAW(AuthAccountId), ?MATCH_ACCOUNT_RAW(AccountId)
-   ,Category=?NE_BINARY, Action=?NE_BINARY, TotalRows, Input, CSVName)
+   ,Category=?NE_BINARY, Action=?NE_BINARY
+   ,TotalRows, Input, CSVName
+   )
   when is_integer(TotalRows), TotalRows > 0;
        TotalRows =:= 'undefined', Input =:= 'undefined' ->
     case help(Category, Action) of
@@ -206,8 +212,8 @@ new_id() ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec help(kz_term:ne_binary(), kz_term:ne_binary()) ->
-                  kz_json:object() |
-                  {'error', 'unknown_category_action'}.
+          kz_json:object() |
+          {'error', 'unknown_category_action'}.
 help(Category, Action) ->
     Req = props:filter_undefined(
             [{<<"Category">>, Category}
@@ -222,13 +228,18 @@ help(Category, Action) ->
         {'ok', JObj} ->
             Help = kz_json:get_value([<<"Help">>, Category, Action], JObj),
             case kz_term:is_empty(Help) of
-                false -> Help;
-                true -> {error, unknown_category_action}
+                'false' -> Help;
+                'true' ->
+                    lager:debug("help resp is empty"),
+                    {'error', 'unknown_category_action'}
             end;
-        {'timeout', _Resp} -> {error, unknown_category_action};
-        {'error', _E} -> {error, unknown_category_action}
+        {'timeout', _Resp} ->
+            lager:debug("help resp timed out"),
+            {'error', 'unknown_category_action'};
+        {'error', _E} ->
+            lager:debug("help resp errored out: ~p", [_E]),
+            {'error', 'unknown_category_action'}
     end.
-
 
 -spec find_input_errors(kz_json:object(), input()) -> map().
 find_input_errors(API, 'undefined') ->
@@ -303,7 +314,7 @@ view(ViewOptions) ->
     end.
 
 -spec save_new_task(task()) -> {'ok', kz_json:object()} |
-                               {'error', any()}.
+          {'error', any()}.
 save_new_task(Task = #{id := _TaskId}) ->
     case kz_datamgr:save_doc(?KZ_TASKS_DB, to_json(Task)) of
         {'ok', Doc} -> {'ok', to_public_json(from_json(Doc))};
@@ -324,7 +335,7 @@ task_by_id(TaskId) ->
 
 -spec from_json(kz_json:object()) -> task().
 from_json(Doc) ->
-    #{worker_pid => undefined
+    #{worker_pid => 'undefined'
      ,worker_node => kzd_task:node(Doc)
      ,account_id => kzd_task:account_id(Doc)
      ,auth_account_id => kzd_task:auth_account_id(Doc)
@@ -407,14 +418,14 @@ to_public_json(Task) ->
 is_processing(#{started := Started
                ,finished := Finished
                }=Task)
-  when Started  =/= undefined,
-       Finished =:= undefined ->
-    not maps:get(was_stopped, Task, false);
+  when Started  =/= 'undefined',
+       Finished =:= 'undefined' ->
+    not maps:get('was_stopped', Task, 'false');
 is_processing(_) ->
-    false.
+    'false'.
 
 -spec status(task()) -> kz_term:ne_binary().
-status(#{was_stopped := true}) ->
+status(#{was_stopped := 'true'}) ->
     ?STATUS_STOPPED;
 
 status(#{started := 'undefined'}) ->

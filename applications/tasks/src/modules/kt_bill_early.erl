@@ -1,7 +1,12 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2013-2019, 2600Hz
+%%% @copyright (C) 2013-2020, 2600Hz
 %%% @doc
 %%% @author Hesaam
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kt_bill_early).
@@ -37,7 +42,7 @@ init() ->
 %%------------------------------------------------------------------------------
 -spec handle_req(kz_term:ne_binary()) -> 'ok'.
 handle_req(AccountDb) ->
-    AccountId = kz_util:format_account_id(AccountDb),
+    AccountId = kzs_util:format_account_id(AccountDb),
 
     EarlyDays = kapps_config:get_integer(?MOD_CAT, <<"how_many_early_days">>, 5),
     {DueTimestamp, IsDaysEarlyYet} = is_days_early_yet(EarlyDays),
@@ -71,17 +76,17 @@ handle_req(_, _, _, _ShouldBill, _ShouldRemind) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec is_days_early_yet(non_neg_integer()) -> kz_time:gregorian_seconds().
+-spec is_days_early_yet(non_neg_integer()) -> {kz_time:gregorian_seconds(), boolean()}.
 is_days_early_yet(EarlyDays) ->
     is_days_early_yet(erlang:date(), EarlyDays).
 
--spec is_days_early_yet(calendar:date(), non_neg_integer()) -> kz_time:gregorian_seconds().
+-spec is_days_early_yet(calendar:date(), non_neg_integer()) -> {kz_time:gregorian_seconds(), boolean()}.
 is_days_early_yet({Year, Month, Day}, EarlyDays) ->
     LastDay = calendar:last_day_of_the_month(Year, Month),
     DueTimestamp =
         calendar:datetime_to_gregorian_seconds({kz_date:normalize({Year, Month, LastDay + 1})
                                                ,{0, 0, 1}
                                                }),
-    {DueTimestamp, LastDay - EarlyDays < Day}.
+    {DueTimestamp, (LastDay - EarlyDays) < Day}.
 
 %%% End of Module.

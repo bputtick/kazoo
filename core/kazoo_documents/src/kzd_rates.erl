@@ -1,6 +1,10 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2019, 2600Hz
+%%% @copyright (C) 2010-2020, 2600Hz
 %%% @doc
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(kzd_rates).
@@ -62,16 +66,16 @@ account_id(Doc, Default) ->
 set_account_id(Doc, AccountId) ->
     kz_json:set_value([<<"account_id">>], AccountId, Doc).
 
--spec caller_id_numbers(doc()) -> kz_term:api_binary().
+-spec caller_id_numbers(doc()) -> kz_term:api_ne_binary().
 caller_id_numbers(Doc) ->
     caller_id_numbers(Doc, 'undefined').
 
--spec caller_id_numbers(doc(), Default) -> binary() | Default.
+-spec caller_id_numbers(doc(), Default) -> kz_term:ne_binary() | Default.
 caller_id_numbers(Doc, Default) ->
     kz_json:get_binary_value([<<"caller_id_numbers">>], Doc, Default).
 
--spec set_caller_id_numbers(doc(), binary()) -> doc().
-set_caller_id_numbers(Doc, CallerIdNumbers) ->
+-spec set_caller_id_numbers(doc(), kz_term:ne_binary()) -> doc().
+set_caller_id_numbers(Doc, <<CallerIdNumbers/binary>>) ->
     kz_json:set_value([<<"caller_id_numbers">>], CallerIdNumbers, Doc).
 
 -spec carrier(doc()) -> kz_term:api_binary().

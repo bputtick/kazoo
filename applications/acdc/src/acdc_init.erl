@@ -1,10 +1,15 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2019, 2600Hz
+%%% @copyright (C) 2012-2020, 2600Hz
 %%% @doc Iterate over each account, find configured queues and configured
 %%% agents, and start the attendant processes
 %%%
 %%% @author James Aimonetti
 %%% @author Daniel Finke
+%%%
+%%% This Source Code Form is subject to the terms of the Mozilla Public
+%%% License, v. 2.0. If a copy of the MPL was not distributed with this
+%%% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+%%%
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(acdc_init).
@@ -22,12 +27,12 @@
 -spec start_link() -> 'ignore'.
 start_link() ->
     _ = declare_exchanges(),
-    _ = kz_util:spawn(fun init_acdc/0, []),
+    _ = kz_process:spawn(fun init_acdc/0, []),
     'ignore'.
 
 -spec init_acdc() -> 'ok'.
 init_acdc() ->
-    kz_util:put_callid(?MODULE),
+    kz_log:put_callid(?MODULE),
     case kz_datamgr:get_all_results(?KZ_ACDC_DB, <<"acdc/accounts_listing">>) of
         {'ok', []} ->
             lager:debug("no accounts configured for acdc");
@@ -50,8 +55,8 @@ init_db() ->
 
 -spec init_acct(kz_term:ne_binary()) -> 'ok'.
 init_acct(Account) ->
-    AccountDb = kz_util:format_account_id(Account, 'encoded'),
-    AccountId = kz_util:format_account_id(Account, 'raw'),
+    AccountDb = kzs_util:format_account_db(Account),
+    AccountId = kzs_util:format_account_id(Account),
 
     lager:debug("init acdc account: ~s", [AccountId]),
 
@@ -62,16 +67,16 @@ init_acct(Account) ->
 
 -spec init_acct_queues(kz_term:ne_binary()) -> 'ok'.
 init_acct_queues(Account) ->
-    AccountDb = kz_util:format_account_id(Account, 'encoded'),
-    AccountId = kz_util:format_account_id(Account, 'raw'),
+    AccountDb = kzs_util:format_account_db(Account),
+    AccountId = kzs_util:format_account_id(Account),
 
     lager:debug("init acdc account queues: ~s", [AccountId]),
     init_acct_queues(AccountDb, AccountId).
 
 -spec init_acct_agents(kz_term:ne_binary()) -> 'ok'.
 init_acct_agents(Account) ->
-    AccountDb = kz_util:format_account_id(Account, 'encoded'),
-    AccountId = kz_util:format_account_id(Account, 'raw'),
+    AccountDb = kzs_util:format_account_db(Account),
+    AccountId = kzs_util:format_account_id(Account),
 
     lager:debug("init acdc account agents: ~s", [AccountId]),
     init_acct_agents(AccountDb, AccountId).
@@ -85,7 +90,8 @@ init_acct_queues(AccountDb, AccountId) ->
 -spec init_acct_agents(kz_term:ne_binary(), kz_term:ne_binary()) -> 'ok'.
 init_acct_agents(AccountDb, AccountId) ->
     init_agents(AccountId
-               ,kz_datamgr:get_results(AccountDb, <<"queues/agents_listing">>, [])
+               ,kz_datamgr:get_results(AccountDb, <<"queues/agents_listing">>
+                                      ,[{'reduce', 'false'}])
                ).
 
 -spec init_queues(kz_term:ne_binary(), kazoo_data:get_results_return()) -> 'ok'.
@@ -134,16 +140,16 @@ try_agents_again(AccountId) ->
     try_again(AccountId, fun init_acct_agents/2).
 
 try_again(AccountId, F) ->
-    kz_util:spawn(
+    kz_process:spawn(
       fun() ->
               wait_a_bit(),
-              AccountDb = kz_util:format_account_id(AccountId, 'encoded'),
+              AccountDb = kzs_util:format_account_db(AccountId),
               F(AccountDb, AccountId)
       end).
 
 -spec spawn_previously_logged_in_agent(kz_term:ne_binary(), kz_term:ne_binary()) -> any().
 spawn_previously_logged_in_agent(AccountId, AgentId) ->
-    kz_util:spawn(
+    kz_process:spawn(
       fun() ->
               {'ok', Status} = acdc_agent_util:most_recent_status(AccountId, AgentId),
               case acdc_agent_util:status_should_auto_start(Status) of
