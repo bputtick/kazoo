@@ -1234,6 +1234,7 @@ voicemail_full_definition() ->
 -define(OPTIONAL_VOICEMAIL_NEW_HEADERS, [<<"Call-ID">>
                                         ,<<"Caller-ID-Name">>
                                         ,<<"Caller-ID-Number">>
+                                        ,<<"Owner-ID">>
                                         ,<<"Voicemail-Length">>
                                         ,<<"Voicemail-Transcription">>
                                              | ?DEFAULT_OPTIONAL_HEADERS
@@ -1251,6 +1252,7 @@ voicemail_full_definition() ->
 -define(OPTIONAL_VOICEMAIL_DELETED_HEADERS, [<<"Call-ID">>
                                             ,<<"Caller-ID-Name">>
                                             ,<<"Caller-ID-Number">>
+                                            ,<<"Owner-ID">>
                                             ,<<"Voicemail-Length">>
                                             ,<<"Voicemail-Transcription">>
                                                  | ?DEFAULT_OPTIONAL_HEADERS

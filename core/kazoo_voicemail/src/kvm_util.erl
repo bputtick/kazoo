@@ -306,13 +306,13 @@ transcribe_default() ->
 publish_saved_notify(MediaId, BoxId, Call, Length, Props) ->
     MaybeTranscribe = props:get_value(<<"Transcribe-Voicemail">>, Props, 'false'),
     Transcription = maybe_transcribe(Call, MediaId, MaybeTranscribe),
-
     NotifyProp = [{<<"From-User">>, kapps_call:from_user(Call)}
                  ,{<<"From-Realm">>, kapps_call:from_realm(Call)}
                  ,{<<"To-User">>, kapps_call:to_user(Call)}
                  ,{<<"To-Realm">>, kapps_call:to_realm(Call)}
                  ,{<<"Account-DB">>, kapps_call:account_db(Call)}
                  ,{<<"Account-ID">>, kapps_call:account_id(Call)}
+                 ,{<<"Owner-ID">>, props:get_value(<<"Owner-Id">>, Props)}
                  ,{<<"Voicemail-Box">>, BoxId}
                  ,{<<"Voicemail-ID">>, MediaId}
                  ,{<<"Caller-ID-Number">>, get_caller_id_number(Call)}
@@ -324,7 +324,7 @@ publish_saved_notify(MediaId, BoxId, Call, Length, Props) ->
                   | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
                  ],
 
-    lager:debug("sending voicemail_new notification"),
+    lager:debug("sending voicemail_new notification with props: ~p", [Props]),
     kapps_notify_publisher:call_collect(NotifyProp, fun kapi_notifications:publish_voicemail_new/1).
 
 %%------------------------------------------------------------------------------
@@ -339,6 +339,7 @@ publish_voicemail_saved(Length, BoxId, Call, MediaId, Timestamp) ->
            ,{<<"To-Realm">>, kapps_call:to_realm(Call)}
            ,{<<"Account-DB">>, kapps_call:account_db(Call)}
            ,{<<"Account-ID">>, kapps_call:account_id(Call)}
+           %,{<<"Owner-ID">>, props:get_value(<<"Owner-Id">>, Props)}
            ,{<<"Voicemail-Box">>, BoxId}
            ,{<<"Voicemail-ID">>, MediaId}
            ,{<<"Caller-ID-Number">>, get_caller_id_number(Call)}
@@ -371,6 +372,7 @@ publish_voicemail_deleted(BoxId, Msg, Reason) ->
            ,{<<"Reason">>, Reason}
            ,{<<"Account-DB">>, kz_json:get_ne_binary_value(<<"pvt_account_db">>, Msg)}
            ,{<<"Account-ID">>, kz_json:get_ne_binary_value(<<"pvt_account_id">>, Msg)}
+           %,{<<"Owner-ID">>, props:get_value(<<"Owner-Id">>, Props)}
            ,{<<"Voicemail-Box">>, BoxId}
            ,{<<"Voicemail-ID">>, kz_json:get_ne_binary_value(<<"media_id">>, Metadata)}
            ,{<<"Caller-ID-Number">>, kz_json:get_ne_binary_value(<<"caller_id_number">>, Metadata)}
