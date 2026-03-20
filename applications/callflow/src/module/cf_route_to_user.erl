@@ -343,7 +343,7 @@ whitelist_action(Whitelist, Call) ->
         'false' -> Action
     end.
 
-is_whitelisted([], _Number) -> <<"accept">>;
+is_whitelisted([], _Number) -> 'true';
 is_whitelisted(Numbers, Number) -> lists:member(Number, Numbers).
 
 maybe_bridge(Data, Call, [], UserDoc) ->
