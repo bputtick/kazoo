@@ -152,6 +152,7 @@
               ,set_pin = <<"3">> :: kz_term:ne_binary()
               ,rec_temporary_unavailable = <<"4">> :: kz_term:ne_binary()
               ,del_temporary_unavailable = <<"5">> :: kz_term:ne_binary()
+              ,del_unavailable = <<"6">> :: kz_term:ne_binary()
               ,toggle_announcement_mode = <<"6">> :: kz_term:ne_binary()
               ,return_main = <<"0">> :: kz_term:ne_binary()
 
@@ -1436,6 +1437,14 @@ handle_config_selection(#mailbox{keys=#keys{del_temporary_unavailable=Selection}
                        ) ->
     lager:info("caller chose to delete their temporary unavailable greeting"),
     delete_temporary_unavailable_greeting(Box, Call);
+handle_config_selection(#mailbox{keys=#keys{del_unavailable=Selection}}=Box
+                       ,Call
+                       ,_Loop
+                       ,Selection
+                       ) ->
+    lager:info("caller chose to delete their unavailable greeting"),
+    delete_unavailable_greeting(Box, Call);
+
 handle_config_selection(#mailbox{keys=#keys{return_main=Selection}}=Box
                        ,Call
                        ,_Loop
@@ -1580,6 +1589,14 @@ delete_temporary_unavailable_greeting(Box, Call) ->
     'ok' = update_doc([<<"media">>, <<"temporary_unavailable">>], 'null', Box, Call),
     _ = kapps_call_command:b_prompt(<<"vm-saved">>, Call),
     Box#mailbox{temporary_unavailable_media_id='undefined'}.
+
+-spec delete_unavailable_greeting(mailbox(), kapps_call:call()) -> mailbox().
+delete_unavailable_greeting(#mailbox{unavailable_media_id='undefined'}=Box, _Call) ->
+    Box;
+delete_unavailable_greeting(Box, Call) ->
+    'ok' = update_doc([<<"media">>, <<"unavailable">>], 'null', Box, Call),
+    _ = kapps_call_command:b_prompt(<<"vm-deleted">>, Call),
+    Box#mailbox{unavailable_media_id='undefined'}.
 
 -spec record_unavailable_greeting(kz_term:ne_binary(), mailbox(), kapps_call:call()) ->
           'ok' | mailbox().
