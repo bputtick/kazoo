@@ -25,6 +25,7 @@
         ,number_db/1
         ,assign_to/1, set_assign_to/2
         ,assigned_to/1, set_assigned_to/2
+        ,owner_id/1, set_owner_id/2
         ,prev_assigned_to/1
         ,used_by/1, set_used_by/2
         ,features/1, features_list/1, set_features/2, reset_features/1
@@ -95,6 +96,7 @@
                           ,rev :: kz_term:api_ne_binary()
                           ,assign_to :: kz_term:api_ne_binary()
                           ,assigned_to :: kz_term:api_ne_binary()
+                          ,owner_id :: kz_term:api_ne_binary()
                           ,prev_assigned_to :: kz_term:api_ne_binary()
                           ,used_by :: kz_term:api_ne_binary()
                           ,features :: kz_term:api_object()
@@ -971,6 +973,14 @@ set_assign_to(PN, AssignTo=?MATCH_ACCOUNT_RAW(_)) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
+-spec owner_id(knm_phone_number()) -> kz_term:api_ne_binary().
+owner_id(#knm_phone_number{owner_id=OwnerId}) ->
+    OwnerId.
+-spec set_owner_id(knm_phone_number(), kz_term:api_ne_binary()) -> knm_phone_number().
+set_owner_id(PN, OwnerId) ->
+    PN#knm_phone_number{owner_id = OwnerId}.
+
+
 -spec assigned_to(knm_phone_number()) -> kz_term:api_ne_binary().
 assigned_to(#knm_phone_number{assigned_to=AssignedTo}) ->
     AssignedTo.

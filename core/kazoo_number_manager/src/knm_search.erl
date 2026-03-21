@@ -152,12 +152,13 @@ handle_info(_Info, State) ->
 
 -spec handle_event(kz_json:object(), state()) -> gen_listener:handle_event_return().
 handle_event(JObj, #{node := Node}) ->
+    lager:debug("handle event ~p : ~p", [kz_api:node(JObj) =/= Node, kz_api:event_name(JObj)]),
     _ = case kz_api:node(JObj) =/= Node
             andalso kz_api:event_name(JObj)
         of
             <<"flush">> -> kz_util:spawn(fun handle_flush/1, [JObj]);
             <<"request">> -> kz_util:spawn(fun handle_search/1, [JObj]);
-            <<"number">> -> kz_util:spawn(fun handle_number/1, [JObj]);
+            <<"number">> -> lager:debug("here"),kz_util:spawn(fun handle_number/1, [JObj]);
             _ -> 'ok'
         end,
     'ignore'.
@@ -263,7 +264,7 @@ wait_for_search(N) ->
             lager:debug("~s found no numbers", [_Carrier]),
             wait_for_search(N - 1);
         {_Carrier, {'ok', Numbers}} ->
-            lager:debug("~s found numbers", [_Carrier]),
+            lager:debug("~s found numbers (~p)", [_Carrier, Numbers]),
             gen_listener:cast(?MODULE, {'add_result', Numbers}),
             wait_for_search(N - 1);
         {_Carrier, {bulk, Numbers}} ->
@@ -284,14 +285,14 @@ wait_for_search(N) ->
 -spec next(options()) -> kz_json:objects().
 next(Options) ->
     QID = query_id(Options),
-    Quantity = quantity(Options),
+    _Quantity = quantity(Options),
     Offset = offset(Options),
     MatchSpec = [{{QID,'$1'},[],['$1']}],
     QLH = qlc:keysort(1, ets:table(?ETS_DISCOVERY_CACHE, [{'traverse', {'select', MatchSpec}}])),
     QLC = qlc:cursor(QLH),
     _ = Offset > 0
         andalso qlc:next_answers(QLC, Offset),
-    Results = qlc:next_answers(QLC, Quantity),
+    Results = qlc:next_answers(QLC, all_remaining),
     qlc:delete_cursor(QLC),
     lager:debug("returning ~B results", [length(Results)]),
     [kz_json:from_list(
@@ -407,6 +408,7 @@ discovery(Num, Options) ->
 local_discovery(_Num, _Options) -> {'error', 'not_found'}.
 -else.
 local_discovery(Num, Options) ->
+    lager:debug("ETS Table: [~p] ~p", [Num, ets:tab2list(?ETS_DISCOVERY_CACHE)]),
     case ets:match_object(?ETS_DISCOVERY_CACHE, {'_', {Num, '_', ?NUMBER_STATE_DISCOVERY, '_'}}) of
         [] -> {'error', 'not_found'};
         [{_QID, {Num, Carrier, _, Data}} | _] ->
@@ -480,6 +482,7 @@ handle_search(JObj, 'true') ->
 
 -spec handle_number(kz_json:object()) -> 'ok'.
 handle_number(JObj) ->
+    lager:debug("handle_number ~p", [JObj]),
     'true' = kapi_discovery:number_req_v(JObj),
     Number = kapi_discovery:number(JObj),
     case local_discovery(Number, []) of
