@@ -26,6 +26,7 @@
 -include_lib("kazoo_number_manager/include/knm_phone_number.hrl").
 
 -define(CB_LIST, <<"phone_numbers/crossbar_listing">>).
+-define(OWNER_LIST, <<"phone_numbers/listing_by_owner">>).
 -define(NUMBERS_UNASSIGNED, <<"numbers/unassigned">>).
 -define(PORT_NUM_LISTING, <<"port_requests/phone_numbers_listing">>).
 -define(PORT_NUMBER_KEY_INDEX, 2).
@@ -109,6 +110,8 @@ authenticate(Context) ->
                       ).
 
 -spec maybe_authenticate(http_method(), req_nouns()) -> boolean().
+maybe_authenticate(?HTTP_GET, [{<<"phone_numbers">>, []}, {<<"users">>, [_UserId]} | _]) ->
+    'true';
 maybe_authenticate(?HTTP_GET, [{<<"phone_numbers">>, []}]) ->
     'true';
 maybe_authenticate(?HTTP_GET, [{<<"phone_numbers">>, [?PREFIX]}]) ->
@@ -126,7 +129,8 @@ authorize(Context) ->
     maybe_authorize(cb_context:req_verb(Context)
                    ,cb_context:req_nouns(Context)
                    ).
-
+maybe_authorize(?HTTP_GET, [{<<"phone_numbers">>, []}, {<<"users">>, [_UserId]} | _]) ->
+    'true';
 maybe_authorize(?HTTP_GET, [{<<"phone_numbers">>, []}]) ->
     'true';
 maybe_authorize(?HTTP_GET, [{<<"phone_numbers">>, [?PREFIX]}]) ->
@@ -545,10 +549,35 @@ normalize_port_number(JObj, Num, AuthBy) ->
 summary(Context) ->
     IsAdmin = knm_phone_number:is_admin(cb_context:auth_account_id(Context)),
     ProviderContext = knm_providers:setup_account_context(cb_context:account_id(Context), IsAdmin),
-    Context1 = view_account_phone_numbers(cb_context:store(Context, 'ctx_num', ProviderContext)),
+    Context1 = view_phone_numbers(cb_context:store(Context, 'ctx_num', ProviderContext), cb_context:req_nouns(Context)),
     case cb_context:resp_status(Context1) of
         'success' -> maybe_update_locality(Context1);
         _Status -> Context1
+    end.
+
+-spec view_phone_numbers(cb_context:context(), req_nouns()) -> cb_context:context().
+view_phone_numbers(Context, [{<<"phone_numbers">>, []}
+                            ,{<<"users">>, [UserId]}
+                             |_]
+                  ) -> view_users_phone_numbers(Context, UserId);
+view_phone_numbers(Context, _ReqNouns) -> view_account_phone_numbers(Context).
+
+-spec view_users_phone_numbers(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
+view_users_phone_numbers(Context, UserId) ->
+    ViewOptions = [{'key', UserId}],
+    Context1 = crossbar_doc:load_view(?OWNER_LIST, ViewOptions, Context, fun normalize_owner_view_results/3),
+    case cb_context:resp_status(Context1) of
+        'success' ->
+            ListOfNumProps = cb_context:resp_data(Context1),
+            NumbersJObj = lists:foldl(fun kz_json:merge_jobjs/2, kz_json:new(), ListOfNumProps),
+            Services = kz_services:fetch(cb_context:account_id(Context)),
+            Quantity = kz_services_quantities:cascade_category(Services, <<"phone_numbers">>),
+            NewRespData = kz_json:from_list([{<<"numbers">>, NumbersJObj}
+                                            ,{<<"cascade_quantity">>, Quantity}
+                                            ]),
+            cb_context:set_resp_data(Context1, NewRespData);
+        _ ->
+            Context1
     end.
 
 -spec view_account_phone_numbers(cb_context:context()) -> cb_context:context().
@@ -640,6 +669,16 @@ normalize_view_results(Context, JObj, Acc) ->
     RowObj = kz_json:get_value(<<"value">>, JObj),
     Allowed = knm_providers:available_features(RowObj, ProviderContext),
     NewJObj = kz_json:set_value([<<"features_available">>], Allowed, kz_doc:public_fields(RowObj)),
+    [kz_json:from_list([{Number, NewJObj}]) | Acc].
+
+-spec normalize_owner_view_results(cb_context:context(), kz_json:object(), kz_json:objects()) -> kz_json:objects().
+normalize_owner_view_results(Context, JObj, Acc) ->
+    ProviderContext = cb_context:fetch(Context, 'ctx_num'),
+    Number = Number = kz_json:get_value([<<"value">>, <<"number">>], JObj),
+    RowObj = kz_json:get_value(<<"value">>, JObj),
+    Allowed = knm_providers:available_features(RowObj, ProviderContext),
+    PublicRowObj = kz_json:delete_key(<<"number">>, kz_doc:public_fields(RowObj)),
+    NewJObj = kz_json:set_value([<<"features_available">>], Allowed, PublicRowObj),
     [kz_json:from_list([{Number, NewJObj}]) | Acc].
 
 -spec normalize_doc_view_result(kz_json:object(), cb_context:context()) -> kz_json:object().
