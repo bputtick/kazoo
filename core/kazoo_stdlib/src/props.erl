@@ -293,23 +293,6 @@ take_value(Key, Props, Default) ->
         Value -> {Value, delete(Key, Props)}
     end.
 
-%%------------------------------------------------------------------------------
-%% @doc Returns the value at Key (or Default) and the (maybe modified) proplist()
-%% @end
-%%------------------------------------------------------------------------------
--spec take_value(kz_term:proplist_key(), kz_term:proplist()) ->
-                        {any(), kz_term:proplist()}.
-take_value(Key, Props) ->
-    take_value(Key, Props, 'undefined').
-
--spec take_value(kz_term:proplist_key(), kz_term:proplist(), Default) ->
-                        {any() | Default, kz_term:proplist()}.
-take_value(Key, Props, Default) ->
-    case get_value(Key, Props) of
-        'undefined' -> {Default, Props};
-        Value -> {Value, delete(Key, Props)}
-    end.
-
 -spec delete(kz_term:proplist_key(), kz_term:proplist()) -> kz_term:proplist().
 delete(K, Props) ->
     case lists:keyfind(K, 1, Props) of
