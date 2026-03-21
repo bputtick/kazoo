@@ -67,7 +67,7 @@ allowed_methods() ->
 allowed_methods(?COUNT_PATH_TOKEN) ->
     [?HTTP_GET];
 allowed_methods(_Username) ->
-    [?HTTP_DELETE].
+    [?HTTP_GET, ?HTTP_DELETE].
 
 %%------------------------------------------------------------------------------
 %% @doc Does the path point to a valid resource.
@@ -118,7 +118,7 @@ validate_registrations(Context, ?HTTP_DELETE) ->
 validate(Context, ?COUNT_PATH_TOKEN) ->
     validate_count(Context);
 validate(Context, Username) ->
-    validate_sip_username(Context, Username).
+    validate_sip_username(Context, Username, cb_context:req_verb(Context)).
 
 -spec validate_count(cb_context:context()) -> cb_context:context().
 validate_count(Context) ->
@@ -126,8 +126,15 @@ validate_count(Context) ->
                           ,Context
                           ).
 
--spec validate_sip_username(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
-validate_sip_username(Context, Username) ->
+-spec validate_sip_username(cb_context:context(), kz_term:ne_binary(), http_method()) -> cb_context:context().
+validate_sip_username(Context, Username, ?HTTP_GET) ->
+    case sip_username_exists(Context, Username) of
+        'true' ->
+            crossbar_util:response(lookup_regs(Context, Username), Context);
+        'false' ->
+            crossbar_util:response_bad_identifier(Username, Context)
+    end;
+validate_sip_username(Context, Username, ?HTTP_DELETE) ->
     case sip_username_exists(Context, Username) of
         'true' ->
             crossbar_util:response(<<"ok">>, Context);
@@ -160,6 +167,23 @@ delete(Context, Username) ->
 -spec lookup_regs(cb_context:context()) -> kz_json:objects().
 lookup_regs(Context) ->
     Req = [{<<"Realm">>, get_realm(Context)}
+          ,{<<"Fields">>, []}
+           | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
+          ],
+
+    ReqResp = kz_amqp_worker:call_collect(Req
+                                         ,fun kapi_registration:publish_query_req/1
+                                         ,{'ecallmgr', 'true'}
+                                         ),
+    case ReqResp of
+        {'error', _} -> [];
+        {_, JObjs} -> merge_responses(JObjs)
+    end.
+
+-spec lookup_regs(cb_context:context(), kz_term:ne_binary()) -> kz_json:objects().
+lookup_regs(Context, Username) ->
+    Req = [{<<"Username">>, Username}
+          ,{<<"Realm">>, get_realm(Context)}
           ,{<<"Fields">>, []}
            | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
           ],
