@@ -67,6 +67,8 @@
 -define(LOCALITY, <<"locality">>).
 -define(CHECK, <<"check">>).
 -define(COUNTRY, <<"country">>).
+-define(BAND, <<"band">>).
+-define(MAX_COST, <<"max_cost">>).
 -define(KNM_CONFIG_CAT, <<"number_manager">>).
 
 -define(UNAUTHORIZED_NUMBERS_LOOKUP(ResellerId)
@@ -732,6 +734,8 @@ pick_account_and_reseller_id(Context) ->
 -spec find_numbers(cb_context:context(), kz_term:ne_binary(), kz_term:ne_binary()) -> cb_context:context().
 find_numbers(Context, AccountId, ResellerId) ->
     QS = cb_context:query_string(Context),
+    Band    = kz_json:get_ne_value(?BAND, QS),
+    MaxCost = kz_json:get_ne_value(?MAX_COST, QS),
     Country = kz_json:get_ne_value(?COUNTRY, QS, ?KNM_DEFAULT_COUNTRY),
     Prefix = kz_binary:remove_white_spaces(kz_json:get_ne_value(?PREFIX, QS)),
     Offset = kz_json:get_integer_value(?OFFSET, QS, 0),
@@ -751,6 +755,8 @@ find_numbers(Context, AccountId, ResellerId) ->
                 ,{'account_id', AccountId}
                 ,{'reseller_id', ResellerId}
                 ,{'query_id', QueryId}
+                ,{'band', Band}
+                ,{'maxcost', MaxCost}
                 ]),
     OnSuccess =
         fun(C) ->

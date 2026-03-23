@@ -33,6 +33,8 @@
        ).
 
 -define(SW_ACCOUNT_ID, kapps_config:get_string(?KNM_SW_CONFIG_CAT, <<"simwood_account_id">>, <<>>)).
+-define(SW_NUMBER_BAND, kapps_config:get_string(?KNM_SW_CONFIG_CAT, <<"simwood_number_band">>, <<"standard">>)).
+-define(SW_NUMBER_COST_FIELD, kapps_config:get_string(?KNM_SW_CONFIG_CAT, <<"simwood_cost_field">>, <<"recommended_gold_premium">>)).
 -define(SW_AUTH_USERNAME, kapps_config:get_binary(?KNM_SW_CONFIG_CAT, <<"auth_username">>, <<>>)).
 -define(SW_AUTH_PASSWORD, kapps_config:get_binary(?KNM_SW_CONFIG_CAT, <<"auth_password">>, <<>>)).
 
@@ -74,7 +76,9 @@ find_numbers(<<"+", Prefix/binary>>, Quantity, Options) ->
 find_numbers(<<"0", Prefix/binary>>, Quantity, Options) ->
     find_numbers(Prefix, Quantity, Options);
 find_numbers(Prefix, Quantity, Options) ->
-    URL = list_to_binary([?SW_NUMBER_URL, "/", ?SW_ACCOUNT_ID, <<"/available/standard/">>, sw_quantity(Quantity), "?pattern=", Prefix, "*"]),
+    lager:debug("OPTIONS: ~p", [Options]),
+    Band = props:get_ne_binary_value('band', Options, ?SW_NUMBER_BAND),
+    URL = list_to_binary([?SW_NUMBER_URL, "/", ?SW_ACCOUNT_ID, <<"/available/">>, Band, "/", sw_quantity(Quantity), "?pattern=", Prefix, "*"]),
     {'ok', Body} = query_simwood(URL, 'get'),
     process_response(lists:sublist(kz_json:decode(Body), Quantity), Options).
 
@@ -166,7 +170,7 @@ query_simwood(URL, Verb) ->
             lager:debug("Simwood response ~p: ~p", [_Resp, Body]),
             {'ok', Body};
         {'error', _R} ->
-            lager:debug("Simwood response: ~p", [_R]),
+            lager:debug("Simwood response: ~p", [o_R]),
             {'error', 'not_available'}
     end.
 
@@ -183,13 +187,23 @@ sw_quantity(_Quantity) -> <<"100">>.
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec process_response(kz_json:objects(), knm_carriers:options()) ->
-          {'ok', knm_number:knm_numbers()}.
+-spec process_response(kz_json:objects(), knm_carriers:options()) -> {'ok', knm_number:knm_numbers()}.
+process_response([[]], _Options) -> {'ok', []};     %simwood seem to rerturn [[]] for no results
 process_response(JObjs, Options) ->
     QID = knm_search:query_id(Options),
-    {'ok', [N || JObj <- JObjs,
-                 N <- [response_jobj_to_number(JObj, QID)]
+    MaxCost = props:get_value('maxcost', Options),
+
+    {'ok', [response_jobj_to_number(JObj, QID)
+            || JObj <- JObjs,
+               within_maxcost(JObj, MaxCost)
            ]}.
+
+within_maxcost(_JObj, undefined) -> true;
+within_maxcost(JObj, MaxCost) ->
+    CostPrice = kz_json:get_float_value(kz_term:to_binary(?SW_NUMBER_COST_FIELD), JObj, 0),
+    CostUnits = kz_currency:dollars_to_units(CostPrice),
+    MaxUnits = kz_currency:dollars_to_units(MaxCost),
+    CostUnits =< MaxUnits.
 
 response_jobj_to_number(JObj, QID) ->
     Num = list_to_binary([kz_json:get_binary_value(<<"country_code">>, JObj)
