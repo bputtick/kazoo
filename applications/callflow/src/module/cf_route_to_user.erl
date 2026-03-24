@@ -141,8 +141,7 @@ try_route_offnet(Call) ->
 %% Route to user
 try_route_user('undefined', ValidNumber, _, Call) ->
     lager:info("Rejecting call to ~s, number not assigned to user", [ValidNumber]),
-    _ = kapps_call_command:response(404, "Not Found", Call),
-    cf_exe:stop(Call);
+    reject_call(<<"404">>, <<"Not Found">>, Call);
 try_route_user(UserId, ValidNumber, Data, Call) ->
     AccountDb = kapps_call:account_db(Call),
     UserDoc = load_user_doc(AccountDb, UserId),
@@ -162,7 +161,7 @@ try_route_user(UserId, ValidNumber, Data, Call) ->
     UpdatedCall = kapps_call:exec(Updates, Call),
     cf_exe:set_call(UpdatedCall),
 
-    case maybe_block_call(UserEnabled, Blacklist, UpdatedCall) of
+    case maybe_reject_call(UserEnabled, Blacklist, UpdatedCall) of
        'false' ->
            _ = add_missed_call_handler(Data, UpdatedCall),
            _ = store_last_caller_number(UserDoc, AccountDb, UpdatedCall),
@@ -172,10 +171,10 @@ try_route_user(UserId, ValidNumber, Data, Call) ->
                        ,Endpoints
                        ,UserDoc
                        );
-       {Code, Cause} -> block_call(Code, Cause, UpdatedCall)
+       {Code, Cause} -> reject_call(Code, Cause, UpdatedCall)
      end.
 
-block_call(Code, Cause, Call) ->
+reject_call(Code, Cause, Call) ->
     lager:info("blocking call ~s ~s", [Code, Cause]),
     _ = kapps_call_command:response(Code, Cause, Call),
     cf_exe:stop(Call).
@@ -203,8 +202,8 @@ number_lookup_filter([Number|_], Number, _) -> Number;
 number_lookup_filter([_|Numbers], CandidateNumber, FirstNumber) -> number_lookup_filter(Numbers, CandidateNumber, FirstNumber).
 
 
-maybe_block_call('false', _, _) -> {<<"410">>, <<"Gone">>};
-maybe_block_call('true', Blacklist, Call) ->
+maybe_reject_call('false', _, _) -> {<<"410">>, <<"Gone">>};
+maybe_reject_call('true', Blacklist, Call) ->
     CCVs = kapps_call:custom_channel_vars(Call),
     case kz_privacy:is_anonymous(CCVs) of
         'true' -> should_block_anonymous(Blacklist);
@@ -328,7 +327,7 @@ maybe_bridge_whitelisted(Data, Call, Endpoints, UserDoc) ->
     Whitelist = kz_json:get_value(<<"whitelist">>, UserDoc),
     case whitelist_action(Whitelist, Call) of
         <<"reject">> -> maybe_forward_to_vm(UserDoc, Data, Call);
-        <<"block">>  -> block_call(<<"603">>, <<"Decline">>, Call);
+        <<"block">>  -> reject_call(<<"603">>, <<"Decline">>, Call);
         <<"accept">> -> maybe_bridge(Data, Call, Endpoints, UserDoc);
         _            -> maybe_bridge(Data, Call, Endpoints, UserDoc)
     end.
@@ -356,7 +355,7 @@ maybe_bridge(Data, Call, Endpoints, UserDoc) ->
     Whitelist = kz_json:get_value(<<"whitelist">>, UserDoc),
     case whitelist_action(Whitelist, Call) of
         <<"try_vm">> -> maybe_forward_to_vm(UserDoc, Data, Call);
-        <<"reject">> -> block_call(<<"603">>, <<"Decline">>, Call);
+        <<"reject">> -> reject_call(<<"603">>, <<"Decline">>, Call);
         _ -> bridge(Data, Call, Endpoints, UserDoc)
     end.
 
@@ -394,6 +393,7 @@ bridge(Data, Call, Endpoints, UserDoc) ->
     end.
 
 maybe_handle_bridge_failure(Reason, UserDoc, Data, Call) ->
+    lager:debug("bridge failure: ~p", [Reason]),
     case cf_util:handle_bridge_failure(Reason, Call) of
         'not_found' -> maybe_forward_to_vm(UserDoc, Data, Call);
         'ok' -> 'ok'
