@@ -295,14 +295,14 @@ validate(Context, Number) ->
 -spec validate_number(cb_context:context(), path_token(), http_method()) -> cb_context:context().
 validate_number(Context, Number, ?HTTP_GET) ->
     summary(Context, Number);
-validate_number(Context, _Number, ?HTTP_POST) ->
-    validate_request(Context);
-validate_number(Context, _Number, ?HTTP_PATCH) ->
-    validate_request(Context);
+validate_number(Context, Number, ?HTTP_POST) ->
+    maybe_validate_owner(Context, Number);
+validate_number(Context, Number, ?HTTP_PATCH) ->
+    maybe_validate_owner(Context, Number);
 validate_number(Context, _Number, ?HTTP_PUT) ->
     validate_request(Context);
-validate_number(Context, _Number, ?HTTP_DELETE) ->
-    validate_delete(Context).
+validate_number(Context, Number, ?HTTP_DELETE) ->
+    validate_delete(Context, Number).
 
 -spec validate(cb_context:context(), path_token(), path_token()) -> cb_context:context().
 validate(Context, ?FIX, _Num) ->
@@ -400,8 +400,9 @@ put(Context, ?COLLECTION) ->
     set_response(Results, Context, CB);
 put(Context, Number) ->
     Doc = cb_context:doc(Context),
+    PublicFields = maybe_set_owner_id(Context, kz_json:delete_key(?PUBLIC_FIELDS_STATE, Doc)),
     Options = [{'assign_to', cb_context:account_id(Context)}
-              ,{'public_fields', kz_json:delete_key(?PUBLIC_FIELDS_STATE, Doc)}
+              ,{'public_fields', PublicFields}
                | maybe_ask_for_state(kz_json:get_ne_binary_value(?PUBLIC_FIELDS_STATE, Doc))
                ++ default_knm_options(Context)
               ],
@@ -498,12 +499,31 @@ delete(Context, Number) ->
 %%------------------------------------------------------------------------------
 -spec summary(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
 summary(Context, Number) ->
-    case knm_number:get(Number, [{'auth_by', cb_context:auth_account_id(Context)}]) of
+    case fetch_knm_number(Context, Number, cb_context:user_id(Context)) of
         {'ok', KNMNumber} ->
             crossbar_util:response(knm_number:to_public_json(KNMNumber), Context);
         {'error', _JObj} ->
             maybe_find_port_number(Context, Number, should_include_ports(Context))
     end.
+
+
+-spec fetch_knm_number(cb_context:context(), kz_term:ne_binary(), kz_term:api_ne_binary()) -> knm_number_return().
+fetch_knm_number(Context, Number, 'undefined') ->
+    knm_number:get(Number, [{'auth_by', cb_context:auth_account_id(Context)}]);
+fetch_knm_number(Context, Number, UserId) ->
+    case knm_number:get(Number, [{'auth_by', cb_context:auth_account_id(Context)}]) of
+        {'ok', KNMNumber} ->
+            case knm_number_owner_matches(KNMNumber, UserId) of
+                'true' -> {'ok', KNMNumber};
+                'false' -> {'error', 'not_found'}
+            end;
+        {'error', _}=Error -> Error
+    end.
+
+-spec knm_number_owner_matches(knm_phone_number:knm_number(), kz_term:ne_binary()) -> boolean().
+knm_number_owner_matches(KNMNumber, UserId) ->
+    JObj = knm_number:to_public_json(KNMNumber),
+    kz_json:get_value(<<"owner_id">>, JObj) =:= UserId.
 
 -spec maybe_find_port_number(cb_context:context(), kz_term:ne_binary(), boolean()) ->
           cb_context:context().
@@ -528,7 +548,19 @@ maybe_find_port_number(Context, Number, 'true') ->
 
 -spec port_number_summary(kz_json:object(), cb_context:context(), boolean()) -> cb_context:context().
 port_number_summary(PhoneNumber, Context, 'true') ->
-    crossbar_util:response(PhoneNumber, Context);
+    case cb_context:user_id(Context) of
+        'undefined' ->
+            crossbar_util:response(PhoneNumber, Context);
+        UserId ->
+            OwnerId = kz_json:get_value([<<"_read_only">>, <<"owner_id">>], PhoneNumber),
+            case OwnerId =:= UserId of
+                'true' ->
+                    crossbar_util:response(PhoneNumber, Context);
+                'false' ->
+                    reply_number_not_found(Context)
+            end
+    end;
+
 port_number_summary(_PhoneNumber, Context, 'false') ->
     reply_number_not_found(Context).
 
@@ -676,7 +708,7 @@ normalize_view_results(Context, JObj, Acc) ->
 -spec normalize_owner_view_results(cb_context:context(), kz_json:object(), kz_json:objects()) -> kz_json:objects().
 normalize_owner_view_results(Context, JObj, Acc) ->
     ProviderContext = cb_context:fetch(Context, 'ctx_num'),
-    Number = Number = kz_json:get_value([<<"value">>, <<"number">>], JObj),
+    Number = kz_json:get_value([<<"value">>, <<"number">>], JObj),
     RowObj = kz_json:get_value(<<"value">>, JObj),
     Allowed = knm_providers:available_features(RowObj, ProviderContext),
     PublicRowObj = kz_json:delete_key(<<"number">>, kz_doc:public_fields(RowObj)),
@@ -761,6 +793,7 @@ find_numbers(Context, AccountId, ResellerId) ->
     OnSuccess =
         fun(C) ->
                 Found = knm_search:find(Options),
+                lager:debug("FOUND: ~p", [Found]),
                 cb_context:setters(C
                                   ,[{fun cb_context:set_resp_data/2, Found}
                                    ,{fun cb_context:set_resp_status/2, 'success'}
@@ -963,6 +996,12 @@ identify(Context, Num) ->
             set_response(Error, Context1)
     end.
 
+maybe_validate_owner(Context, Number) ->
+    case fetch_knm_number(Context, Number, cb_context:user_id(Context)) of
+        {'ok', _KNMNumber} -> validate_request(Context);
+        {'error', _} -> reply_number_not_found(Context)
+    end.
+
 %%------------------------------------------------------------------------------
 %% @doc
 %% @end
@@ -975,11 +1014,14 @@ validate_request(Context) ->
 %% @doc Always validate DELETEs.
 %% @end
 %%------------------------------------------------------------------------------
--spec validate_delete(cb_context:context()) -> cb_context:context().
-validate_delete(Context) ->
-    cb_context:set_doc(cb_context:set_resp_status(Context, 'success')
-                      ,'undefined'
-                      ).
+-spec validate_delete(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
+validate_delete(Context, Number) ->
+    case fetch_knm_number(Context, Number, cb_context:user_id(Context)) of
+        {'ok', _KNMNumber} ->
+            cb_context:set_doc(cb_context:set_resp_status(Context, 'success'), 'undefined');
+        {'error', _} ->
+            reply_number_not_found(Context)
+    end.
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -1089,8 +1131,9 @@ numbers_action(Context, ?ACTIVATE, Numbers) ->
     knm_numbers:move(Numbers, cb_context:account_id(Context), Options);
 numbers_action(Context, ?HTTP_PUT, Numbers) ->
     ReqData = cb_context:req_data(Context),
+    PublicFields = maybe_set_owner_id(Context, kz_json:delete_key(?PUBLIC_FIELDS_STATE, ReqData)),
     Options = [{'assign_to', cb_context:account_id(Context)}
-              ,{'public_fields', kz_json:delete_key(?PUBLIC_FIELDS_STATE, ReqData)}
+              ,{'public_fields', PublicFields}
                | maybe_ask_for_state(kz_json:get_ne_binary_value(?PUBLIC_FIELDS_STATE, ReqData))
                ++ default_knm_options(Context)
               ],
@@ -1158,3 +1201,10 @@ default_knm_options(Context) ->
     ,{'auth_by', AuthAccountId}
     ,{'dry_run', not cb_context:accepting_charges(Context)}
     ].
+
+-spec maybe_set_owner_id(cb_context:context(), kz_json:object()) -> kz_json:object().
+maybe_set_owner_id(Context, PublicFields) ->
+    case cb_context:user_id(Context) of
+        'undefined' -> PublicFields;
+        UserId -> kz_json:set_value(<<"owner_id">>, UserId, PublicFields)
+    end.
