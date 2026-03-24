@@ -210,4 +210,15 @@ response_jobj_to_number(JObj, QID) ->
                          ,kz_json:get_binary_value(<<"number">>, JObj)
                          ]),
     Num2 = knm_converters:normalize(from_simwood(Num)),
-    {QID, {Num2, ?MODULE, ?NUMBER_STATE_DISCOVERY, JObj}}.
+    {QID, {Num2, ?MODULE, ?NUMBER_STATE_DISCOVERY, normalise_costs(JObj)}}.
+
+-spec normalise_costs(kz_json:object()) -> kz_json:object().
+normalise_costs(JObj) ->
+    Cost = kz_json:get_value([kz_term:to_binary(?SW_NUMBER_COST_FIELD)], JObj, 0),
+    DeleteKeys = [<<"recommended_gold_premium">>
+                 ,<<"wholesale_gold_premium">>
+                 ],
+    kz_json:set_value([<<"cost">>]
+                      ,kz_currency:dollars_to_units(Cost)
+                      ,kz_json:delete_keys(DeleteKeys, JObj)
+                      ).

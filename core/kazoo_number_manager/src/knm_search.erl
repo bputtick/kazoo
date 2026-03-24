@@ -298,8 +298,9 @@ next(Options) ->
     [kz_json:from_list(
        [{<<"number">>, Num}
        ,{<<"state">>, State}
+       ,{<<"cost">>, kz_json:get_value(<<"cost">>, CarrierData)}
        ])
-     || {Num, _ModuleName, State, _CarrierData} <- Results
+     || {Num, _ModuleName, State, CarrierData} <- Results
     ].
 
 %%------------------------------------------------------------------------------
