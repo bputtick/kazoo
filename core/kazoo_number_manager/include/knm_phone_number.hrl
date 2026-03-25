@@ -55,6 +55,7 @@
 -define(NUMBER_STATE_PORT_IN, <<"port_in">>).
 -define(NUMBER_STATE_PORT_OUT, <<"port_out">>).
 -define(NUMBER_STATE_RELEASED, <<"released">>).
+-define(NUMBER_STATE_SOFT_RELEASE, <<"soft_release">>).
 -define(NUMBER_STATE_RESERVED, <<"reserved">>).
 
 -define(KNM_AVAILABLE_STATES, [?NUMBER_STATE_DISCOVERY, ?NUMBER_STATE_AVAILABLE]).

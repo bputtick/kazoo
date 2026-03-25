@@ -26,6 +26,7 @@
         ,move/2, move/3
         ,update/2, update/3
         ,release/1, release/2
+        ,soft_release/1, soft_release/2
         ,delete/2
         ,reconcile/2
         ,reserve/2
@@ -351,6 +352,24 @@ release(Nums, Options) ->
              ,fun knm_number:new/1
              ,fun knm_providers:delete/1
              ,fun unwind_maybe_disconnect/1
+             ,fun save_phone_numbers/1
+             ])).
+
+-spec soft_release(kz_term:ne_binaries()) -> ret().
+soft_release(Nums) ->
+    soft_release(Nums, knm_number_options:default()).
+
+-spec soft_release(kz_term:ne_binaries(), knm_number_options:options()) -> ret().
+soft_release(Nums, Options) ->
+    Routines = [{fun knm_phone_number:set_state/2, ?NUMBER_STATE_SOFT_RELEASE}
+                | knm_number_options:to_phone_number_setters(Options)
+               ],
+    lager:debug("soft_release(~p, ~p)", [Nums, Options]),
+    ret(pipe(do_get_pn(Nums, Options)
+            ,[fun try_release/1
+             ,fun (T) -> knm_phone_number:setters(T, Routines) end
+             ,fun knm_number:new/1
+             ,fun knm_providers:delete/1
              ,fun save_phone_numbers/1
              ])).
 
@@ -918,6 +937,7 @@ can_release(T0=#{'todo' := PNs}) ->
     lists:foldl(F, T0, PNs).
 
 -spec can_release(kz_term:ne_binary(), kz_term:ne_binary()) -> boolean().
+can_release(?NUMBER_STATE_SOFT_RELEASE, _) -> 'true';
 can_release(?NUMBER_STATE_RELEASED, _) -> 'true';
 can_release(?NUMBER_STATE_RESERVED, _) -> 'true';
 can_release(?NUMBER_STATE_PORT_IN, _) -> 'true';

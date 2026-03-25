@@ -1231,6 +1231,7 @@ is_state(State)
        State =:= ?NUMBER_STATE_PORT_OUT;
        State =:= ?NUMBER_STATE_DISCOVERY;
        State =:= ?NUMBER_STATE_IN_SERVICE;
+       State =:= ?NUMBER_STATE_SOFT_RELEASE;
        State =:= ?NUMBER_STATE_RELEASED;
        State =:= ?NUMBER_STATE_RESERVED;
        State =:= ?NUMBER_STATE_AVAILABLE;

@@ -32,6 +32,7 @@
 -define(PORT_NUMBER_KEY_INDEX, 2).
 
 -define(ACTIVATE, <<"activate">>).
+-define(RELEASE, <<"release">>).
 -define(RESERVE, <<"reserve">>).
 -define(PORT, <<"port">>).
 -define(PORT_OUT, <<"port_out">>).
@@ -184,6 +185,8 @@ allowed_methods(_PhoneNumber, ?ACTIVATE) ->
     [?HTTP_PUT];
 allowed_methods(_PhoneNumber, ?RESERVE) ->
     [?HTTP_PUT];
+allowed_methods(_PhoneNumber, ?RELEASE) ->
+    [?HTTP_PUT];
 allowed_methods(_PhoneNumber, ?PORT) ->
     [?HTTP_PUT];
 allowed_methods(_PhoneNumber, ?PORT_OUT) ->
@@ -215,6 +218,7 @@ resource_exists(_PhoneNumber) -> 'true'.
 resource_exists(?FIX, _PhoneNumber) -> 'true';
 resource_exists(_PhoneNumber, ?ACTIVATE) -> 'true';
 resource_exists(_PhoneNumber, ?RESERVE) -> 'true';
+resource_exists(_PhoneNumber, ?RELEASE) -> 'true';
 resource_exists(_PhoneNumber, ?PORT) -> 'true';
 resource_exists(_PhoneNumber, ?PORT_OUT) -> 'true';
 resource_exists(_PhoneNumber, ?IDENTIFY) -> 'true';
@@ -320,6 +324,8 @@ validate(Context, _Number, ?ACTIVATE) ->
         'false' -> cb_context:add_system_error('too_many_requests', Context)
     end;
 validate(Context, _Number, ?RESERVE) ->
+    validate_request(Context);
+validate(Context, _Number, ?RELEASE) ->
     validate_request(Context);
 validate(Context, _Number, ?PORT) ->
     validate_request(Context);
@@ -432,6 +438,15 @@ put(Context, Number, ?RESERVE) ->
               ],
     Result = knm_number:reserve(Number, Options),
     CB = fun() -> ?MODULE:put(cb_context:set_accepting_charges(Context), Number, ?RESERVE) end,
+    set_response(Result, Context, CB);
+put(Context, Number, ?RELEASE) ->
+    Options = [{'assign_to', cb_context:account_id(Context)}
+              ,{'owner_id', 'undefined'}
+              ,{'public_fields', cb_context:doc(Context)}
+               | default_knm_options(Context)
+              ],
+    Result = knm_number:soft_release(Number, Options),
+    CB = fun() -> ?MODULE:put(cb_context:set_accepting_charges(Context), Number, ?RELEASE) end,
     set_response(Result, Context, CB);
 put(Context, Number, ?PORT) ->
     Options = [{'assign_to', cb_context:account_id(Context)}

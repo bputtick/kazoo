@@ -168,6 +168,13 @@ to_in_service(T, ?NUMBER_STATE_AGING) ->
                     ,[fun (T0) -> fail_if_mdn(T0, ?NUMBER_STATE_IN_SERVICE, ?NUMBER_STATE_AGING) end
                      ,fun move_to_in_service_state/1
                      ]);
+to_in_service(T, ?NUMBER_STATE_SOFT_RELEASE) ->
+    %% Allow everyone to rebuy SOFT_RELEASE numbers in case the number is accidentally deleted
+    %% External carriers MUST NOT be contacted
+    knm_numbers:pipe(T
+                    ,[fun (T0) -> fail_if_mdn(T0, ?NUMBER_STATE_IN_SERVICE, ?NUMBER_STATE_SOFT_RELEASE) end
+                     ,fun move_to_in_service_state/1
+                     ]);
 to_in_service(T, ?NUMBER_STATE_RESERVED) ->
     knm_numbers:pipe(T
                     ,[fun (T0) -> fail_if_mdn(T0, ?NUMBER_STATE_IN_SERVICE, ?NUMBER_STATE_RESERVED) end

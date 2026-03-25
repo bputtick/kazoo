@@ -14,6 +14,7 @@
         ,move/2, move/3
         ,update/2, update/3
         ,release/1, release/2
+        ,soft_release/1, soft_release/2
         ,delete/2
         ,assign_to_app/2, assign_to_app/3
         ,lookup_account/1
@@ -360,6 +361,15 @@ release(Num) ->
 -spec release(kz_term:ne_binary(), knm_number_options:options()) -> knm_number_return().
 release(Num, Options) ->
     ?RUN_KNM_NUMBERS_FUN('release', Num, Options).
+
+-spec soft_release(kz_term:ne_binary()) -> knm_number_return().
+soft_release(Num) ->
+    soft_release(Num, knm_number_options:default()).
+
+-spec soft_release(kz_term:ne_binary(), knm_number_options:options()) -> knm_number_return().
+soft_release(Num, Options) ->
+    lager:debug("soft_release(~p, ~p)", [Num, Options]),
+    ?RUN_KNM_NUMBERS_FUN('soft_release', Num, Options).
 
 %%------------------------------------------------------------------------------
 %% @doc Remove a number from the system without doing any state checking.
