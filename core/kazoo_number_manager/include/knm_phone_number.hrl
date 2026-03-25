@@ -33,12 +33,15 @@
 -define(PVT_MODULE_NAME, <<"pvt_module_name">>).
 -define(PVT_PORTED_IN, <<"pvt_ported_in">>).
 -define(PVT_PREVIOUSLY_ASSIGNED_TO, <<"pvt_previously_assigned_to">>).
+-define(PVT_PREVIOUSLY_OWNED_BY, <<"pvt_previously_owned_by">>).
 -define(PVT_REGION, <<"pvt_region">>).
 -define(PVT_RESERVE_HISTORY, <<"pvt_reserve_history">>).
 -define(PVT_STATE, <<"pvt_state">>).
 -define(PVT_STATE_LEGACY, <<"pvt_number_state">>).
 -define(PVT_TYPE, <<"pvt_type">>).
 -define(PVT_USED_BY, <<"pvt_used_by">>).
+-define(PVT_OWNER_ID, <<"pvt_owner_id">>).
+-define(PUB_OWNER_ID, <<"owner_id">>).
 
 -define(KNM_DB_PREFIX, "numbers/").
 -define(KNM_DB_PREFIX_ENCODED, "numbers%2F").

@@ -27,6 +27,7 @@
         ,assigned_to/1, set_assigned_to/2
         ,owner_id/1, set_owner_id/2
         ,prev_assigned_to/1
+        ,prev_owned_by/1
         ,used_by/1, set_used_by/2
         ,features/1, features_list/1, set_features/2, reset_features/1
         ,feature/2, set_feature/3
@@ -98,6 +99,7 @@
                           ,assigned_to :: kz_term:api_ne_binary()
                           ,owner_id :: kz_term:api_ne_binary()
                           ,prev_assigned_to :: kz_term:api_ne_binary()
+                          ,prev_owned_by :: kz_term:api_ne_binary()
                           ,used_by :: kz_term:api_ne_binary()
                           ,features :: kz_term:api_object()
                           ,state :: kz_term:api_ne_binary()              %%%
@@ -613,6 +615,7 @@ to_public_json(PN) ->
     State = {<<"state">>, state(PN)},
     UsedBy = {<<"used_by">>, used_by(PN)},
     Features = {<<"features">>, features_list(PN)},
+    Owner = {<<"owner_id">>, owner_id(PN)},
     ModuleName = case module_name(PN) of
                      <<"knm_", Carrier/binary>> -> Carrier;
                      _ -> 'undefined'
@@ -629,6 +632,7 @@ to_public_json(PN) ->
             ,{<<"modified">>, kz_doc:modified(JObj)}
             ,State
             ,UsedBy
+            ,Owner
             ,{<<"features">>, kz_json:from_list(ReadOnlyFeatures)}
             ,{<<"carrier_module">>, ModuleName}
             ])
@@ -662,7 +666,10 @@ to_json(#knm_phone_number{doc=JObj}=PN) ->
           props:filter_empty(
             [{<<"_rev">>, rev(PN)}
             ,{?PVT_ASSIGNED_TO, assigned_to(PN)}
+            ,{?PVT_OWNER_ID, owner_id(PN)}
+            ,{?PUB_OWNER_ID, owner_id(PN)}
             ,{?PVT_PREVIOUSLY_ASSIGNED_TO, prev_assigned_to(PN)}
+            ,{?PVT_PREVIOUSLY_OWNED_BY, prev_owned_by(PN)}
             ,{?PVT_USED_BY, used_by(PN)}
             ,{?PVT_FEATURES, features(PN)}
             ,{?PVT_FEATURES_ALLOWED, features_allowed(PN)}
@@ -687,7 +694,12 @@ from_json(JObj) ->
                  ,kz_json:get_value(?PVT_ASSIGNED_TO, JObj)
                  ,kz_json:get_value(?PVT_USED_BY, JObj)
                  }
+                ,{fun set_owner_id/3
+                 ,kz_json:get_value(?PVT_OWNER_ID, JObj)
+                 ,kz_json:get_value(?PUB_OWNER_ID, JObj)
+                 }
                 ,{fun set_prev_assigned_to/2, kz_json:get_value(?PVT_PREVIOUSLY_ASSIGNED_TO, JObj)}
+                ,{fun set_prev_owned_by/2, kz_json:get_value(?PVT_PREVIOUSLY_OWNED_BY, JObj)}
                 ,{fun set_reserve_history/2, kz_json:get_value(?PVT_RESERVE_HISTORY, JObj, ?DEFAULT_RESERVE_HISTORY)}
 
                 ,{fun set_modified/2, kz_doc:modified(JObj)}
@@ -976,9 +988,22 @@ set_assign_to(PN, AssignTo=?MATCH_ACCOUNT_RAW(_)) ->
 -spec owner_id(knm_phone_number()) -> kz_term:api_ne_binary().
 owner_id(#knm_phone_number{owner_id=OwnerId}) ->
     OwnerId.
+
 -spec set_owner_id(knm_phone_number(), kz_term:api_ne_binary()) -> knm_phone_number().
-set_owner_id(PN, OwnerId) ->
-    PN#knm_phone_number{owner_id = OwnerId}.
+set_owner_id(PN=#knm_phone_number{owner_id = V}, V) -> PN;
+set_owner_id(PN0, OwnerId='undefined') ->
+    PN = set_prev_owned_by(PN0, owner_id(PN0)),
+    ?LOG_DEBUG("unassigning owner_id for ~s from ~p", [number(PN), PN#knm_phone_number.owner_id]),
+    ?DIRTY(PN#knm_phone_number{owner_id = OwnerId});
+set_owner_id(PN0, OwnerId=?NE_BINARY) ->
+    PN = set_prev_owned_by(PN0, owner_id(PN0)),
+    ?LOG_DEBUG("updating owner_id for ~s from ~p to ~p", [number(PN), PN#knm_phone_number.owner_id, OwnerId]),
+    ?DIRTY(PN#knm_phone_number{owner_id = OwnerId}).
+
+%% set_owner_id/3 only called from from_json/1
+-spec set_owner_id(knm_phone_number(), kz_term:api_ne_binary(), kz_term:api_ne_binary()) -> knm_phone_number().
+set_owner_id(PN, 'undefined', PubOwnerId=?NE_BINARY) -> ?DIRTY(PN#knm_phone_number{owner_id = PubOwnerId});
+set_owner_id(PN, PvtOwnerId, _) -> PN#knm_phone_number{owner_id = PvtOwnerId}.
 
 
 -spec assigned_to(knm_phone_number()) -> kz_term:api_ne_binary().
@@ -1025,7 +1050,7 @@ set_assigned_to(PN, AssignedTo=?MATCH_ACCOUNT_RAW(_), UsedBy=?NE_BINARY) ->
 prev_assigned_to(#knm_phone_number{prev_assigned_to=PrevAssignedTo}) ->
     PrevAssignedTo.
 
-%% Called from set_assigned_to/2 & from_json/1.
+%% Called from set_prev_assigned_to/2 & from_json/1.
 -spec set_prev_assigned_to(knm_phone_number(), kz_term:api_ne_binary()) -> knm_phone_number().
 set_prev_assigned_to(PN=#knm_phone_number{prev_assigned_to = 'undefined'}
                     ,PrevAssignedTo=?MATCH_ACCOUNT_RAW(_)) ->
@@ -1036,6 +1061,27 @@ set_prev_assigned_to(PN, 'undefined') -> PN;
 set_prev_assigned_to(PN=#knm_phone_number{prev_assigned_to = V}, V) -> PN;
 set_prev_assigned_to(PN, PrevAssignedTo=?MATCH_ACCOUNT_RAW(_)) ->
     ?DIRTY(PN#knm_phone_number{prev_assigned_to = PrevAssignedTo}).
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+-spec prev_owned_by(knm_phone_number()) -> kz_term:api_ne_binary().
+prev_owned_by(#knm_phone_number{prev_owned_by=PrevOwnedBy}) ->
+    PrevOwnedBy.
+
+%% Called from set_owner_id/2 & from_json/1.
+-spec set_prev_owned_by(knm_phone_number(), kz_term:api_ne_binary()) -> knm_phone_number().
+set_prev_owned_by(PN=#knm_phone_number{prev_owned_by = 'undefined'}
+                 ,PrevOwnedBy=?NE_BINARY) ->
+    PN#knm_phone_number{prev_owned_by = PrevOwnedBy};
+
+set_prev_owned_by(PN, 'undefined') -> PN;
+
+set_prev_owned_by(PN=#knm_phone_number{prev_owned_by = V}, V) -> PN;
+set_prev_owned_by(PN, PrevOwnedBy=?NE_BINARY) ->
+    ?DIRTY(PN#knm_phone_number{prev_owned_by = PrevOwnedBy}).
+
 
 %%------------------------------------------------------------------------------
 %% @doc

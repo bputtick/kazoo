@@ -607,7 +607,6 @@ transition_numbers(PortReq) ->
               ,{'owner_id', OwnerId}
               ,{'dry_run', 'false'}
               ,{'ported_in', 'true'}
-              ,{'owner_id', OwnerId}
               ,{'public_fields', kz_json:from_list([{<<"port_id">>, PortReqId}, {<<"owner_id">>, OwnerId}])}
               ],
     lager:debug("creating local numbers for port ~s for owner ~p", [PortReqId,OwnerId]),

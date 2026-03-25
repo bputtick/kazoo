@@ -36,6 +36,7 @@
 -define(PORT, <<"port">>).
 -define(PORT_OUT, <<"port_out">>).
 
+
 -define(UNASSIGNED, <<"unassigned">>).
 -define(CLASSIFIERS, <<"classifiers">>).
 -define(IDENTIFY, <<"identify">>).
@@ -186,7 +187,7 @@ allowed_methods(_PhoneNumber, ?RESERVE) ->
 allowed_methods(_PhoneNumber, ?PORT) ->
     [?HTTP_PUT];
 allowed_methods(_PhoneNumber, ?PORT_OUT) ->
-    [?HTTP_PATCH];
+    [?HTTP_PATCH, ?HTTP_PUT];
 allowed_methods(_PhoneNumber, ?IDENTIFY) ->
     [?HTTP_GET].
 
@@ -400,9 +401,9 @@ put(Context, ?COLLECTION) ->
     set_response(Results, Context, CB);
 put(Context, Number) ->
     Doc = cb_context:doc(Context),
-    PublicFields = maybe_set_owner_id(Context, kz_json:delete_key(?PUBLIC_FIELDS_STATE, Doc)),
     Options = [{'assign_to', cb_context:account_id(Context)}
-              ,{'public_fields', PublicFields}
+              ,{'owner_id', cb_context:user_id(Context)}
+              ,{'public_fields', kz_json:delete_key(?PUBLIC_FIELDS_STATE, Doc)}
                | maybe_ask_for_state(kz_json:get_ne_binary_value(?PUBLIC_FIELDS_STATE, Doc))
                ++ default_knm_options(Context)
               ],
@@ -417,6 +418,7 @@ put(Context, ?COLLECTION, ?ACTIVATE) ->
     set_response(Results, Context, CB);
 put(Context, ?NE_BINARY=Number, ?ACTIVATE) ->
     Options = [{'public_fields', cb_context:doc(Context)}
+              ,{'owner_id', cb_context:user_id(Context)}
                | default_knm_options(Context)
               ],
     Result = knm_number:move(Number, cb_context:account_id(Context), Options),
@@ -424,6 +426,7 @@ put(Context, ?NE_BINARY=Number, ?ACTIVATE) ->
     set_response(Result, Context, CB);
 put(Context, Number, ?RESERVE) ->
     Options = [{'assign_to', cb_context:account_id(Context)}
+              ,{'owner_id', cb_context:user_id(Context)}
               ,{'public_fields', cb_context:doc(Context)}
                | default_knm_options(Context)
               ],
@@ -432,14 +435,23 @@ put(Context, Number, ?RESERVE) ->
     set_response(Result, Context, CB);
 put(Context, Number, ?PORT) ->
     Options = [{'assign_to', cb_context:account_id(Context)}
+              ,{'owner_id', cb_context:user_id(Context)}
               ,{'public_fields', cb_context:doc(Context)}
               ,{'state', ?NUMBER_STATE_PORT_IN}
                | default_knm_options(Context)
               ],
     Result = knm_number:create(Number, Options),
     CB = fun() -> ?MODULE:put(cb_context:set_accepting_charges(Context), Number, ?PORT) end,
+    set_response(Result, Context, CB);
+put(Context, Number, ?PORT_OUT) ->
+    Options = [{'assign_to', cb_context:account_id(Context)}
+              ,{'owner_id', cb_context:user_id(Context)}
+              ,{'public_fields', cb_context:doc(Context)}
+               | default_knm_options(Context)
+              ],
+    Result = knm_number:update(Number, [{fun knm_phone_number:set_state/2, ?NUMBER_STATE_PORT_OUT}], Options),
+    CB = fun() -> ?MODULE:put(cb_context:set_accepting_charges(Context), Number, ?PORT_OUT) end,
     set_response(Result, Context, CB).
-
 
 -spec patch(cb_context:context(), path_token()) -> cb_context:context().
 patch(Context, ?COLLECTION) ->
@@ -458,13 +470,14 @@ patch(Context, Number) ->
 -spec patch(cb_context:context(), path_token(), path_token()) -> cb_context:context().
 patch(Context, Number, ?PORT_OUT) ->
     Options = [{'assign_to', cb_context:account_id(Context)}
-              ,{'public_fields', cb_context:doc(Context)}
                | default_knm_options(Context)
               ],
-    Result = knm_number:update(Number, [{fun knm_phone_number:set_state/2, ?NUMBER_STATE_PORT_OUT}], Options),
+    JObj = cb_context:doc(Context),
+    Result = knm_number:update(Number, [{fun knm_phone_number:update_doc/2, JObj}
+                                       ,{fun knm_phone_number:set_state/2, ?NUMBER_STATE_PORT_OUT}
+                                       ], Options),
     CB = fun() -> ?MODULE:patch(cb_context:set_accepting_charges(Context), Number, ?PORT_OUT) end,
     set_response(Result, Context, CB).
-
 
 -spec delete(cb_context:context(), path_token()) -> cb_context:context().
 delete(Context, ?COLLECTION) ->
@@ -986,8 +999,10 @@ update_phone_numbers_locality_fold(Key, Value, JObj, Context) ->
 identify(Context, Num) ->
     case knm_number:lookup_account(Num) of
         {'ok', AccountId, ExtraOptions} ->
+            lager:debug("PROPS ~p ~p", [AccountId, ExtraOptions]),
             JObj = kz_json:from_list(
                      [{<<"account_id">>, AccountId}
+                     ,{<<"owner_id">>, knm_number_options:owner_id(ExtraOptions)}
                      ,{<<"number">>, knm_number_options:number(ExtraOptions)}
                      ]),
             crossbar_util:response(JObj, Context);
@@ -1126,20 +1141,22 @@ collection_process(Context, Action) ->
 -spec numbers_action(cb_context:context(), kz_term:ne_binary() | http_method(), kz_term:ne_binaries()) -> knm_numbers:ret().
 numbers_action(Context, ?ACTIVATE, Numbers) ->
     Options = [{'public_fields', cb_context:req_data(Context)}
+              ,{'owner_id', cb_context:user_id(Context)}
                | default_knm_options(Context)
               ],
     knm_numbers:move(Numbers, cb_context:account_id(Context), Options);
 numbers_action(Context, ?HTTP_PUT, Numbers) ->
     ReqData = cb_context:req_data(Context),
-    PublicFields = maybe_set_owner_id(Context, kz_json:delete_key(?PUBLIC_FIELDS_STATE, ReqData)),
     Options = [{'assign_to', cb_context:account_id(Context)}
-              ,{'public_fields', PublicFields}
+              ,{'owner_id', cb_context:user_id(Context)}
+              ,{'public_fields', kz_json:delete_key(?PUBLIC_FIELDS_STATE, ReqData)}
                | maybe_ask_for_state(kz_json:get_ne_binary_value(?PUBLIC_FIELDS_STATE, ReqData))
                ++ default_knm_options(Context)
               ],
     knm_numbers:create(Numbers, Options);
 numbers_action(Context, ?HTTP_POST, Numbers) ->
     Options = [{'assign_to', cb_context:account_id(Context)}
+              ,{'owner_id', cb_context:user_id(Context)}
                | default_knm_options(Context)
               ],
     JObj = cb_context:req_data(Context),
@@ -1201,10 +1218,3 @@ default_knm_options(Context) ->
     ,{'auth_by', AuthAccountId}
     ,{'dry_run', not cb_context:accepting_charges(Context)}
     ].
-
--spec maybe_set_owner_id(cb_context:context(), kz_json:object()) -> kz_json:object().
-maybe_set_owner_id(Context, PublicFields) ->
-    case cb_context:user_id(Context) of
-        'undefined' -> PublicFields;
-        UserId -> kz_json:set_value(<<"owner_id">>, UserId, PublicFields)
-    end.
