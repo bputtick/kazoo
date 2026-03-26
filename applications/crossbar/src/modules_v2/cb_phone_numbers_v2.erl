@@ -627,7 +627,7 @@ view_phone_numbers(Context, _ReqNouns) -> view_account_phone_numbers(Context).
 -spec view_users_phone_numbers(cb_context:context(), kz_term:ne_binary()) -> cb_context:context().
 view_users_phone_numbers(Context, UserId) ->
     ViewOptions = [{'key', UserId}],
-    Context1 = crossbar_doc:load_view(?OWNER_LIST, ViewOptions, Context, fun normalize_owner_view_results/3),
+    Context1 = crossbar_doc:load_view(?OWNER_LIST, ViewOptions, rename_qs_filters(Context), fun normalize_owner_view_results/3),
     case cb_context:resp_status(Context1) of
         'success' ->
             ListOfNumProps = cb_context:resp_data(Context1),
@@ -719,6 +719,7 @@ rename_qs_filters(Context) ->
     Renamer = fun (<<"filter_state">>, Value)       -> {<<"filter_pvt_state">>, Value};
                   (<<"filter_assigned_to">>, Value) -> {<<"filter_pvt_assigned_to">>, Value};
                   (<<"filter_locality">>, Value)    -> {<<"filter_pvt_locality">>, Value};
+                  (<<"filter_ported_in">>, Value)    -> {<<"filter_pvt_ported_in">>, Value};
                   (K, V) -> {K, V}
               end,
     NewQS = kz_json:map(Renamer, cb_context:query_string(Context)),

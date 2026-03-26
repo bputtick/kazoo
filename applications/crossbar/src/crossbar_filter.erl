@@ -173,6 +173,8 @@ build_filter_map_fun(Context, FilterFun, UserMapper) when is_function(UserMapper
 -spec is_filter_key({binary(), any()}) -> boolean().
 is_filter_key({<<"filter_", _/binary>>, _}) -> 'true';
 is_filter_key({<<"filter_not_", _/binary>>, _}) -> 'true';
+is_filter_key({<<"filter_to_", _/binary>>, _}) -> 'true';
+is_filter_key({<<"filter_from_", _/binary>>, _}) -> 'true';
 is_filter_key({<<"has_key", _/binary>>, _}) -> 'true';
 is_filter_key({<<"key_missing", _/binary>>, _}) -> 'true';
 is_filter_key({<<"has_value", _/binary>>, _}) -> 'true';
@@ -181,7 +183,9 @@ is_filter_key({<<"created_from">>, _}) -> 'true';
 is_filter_key({<<"created_to">>, _}) -> 'true';
 is_filter_key({<<"modified_from">>, _}) -> 'true';
 is_filter_key({<<"modified_to">>, _}) -> 'true';
-is_filter_key(_) -> 'false'.
+is_filter_key(_Key) ->
+    lager:debug("~p is not a filter key", [_Key]),
+    'false'.
 
 -spec filter_doc_by_querystring(kz_json:object(), kz_json:object()) -> boolean().
 filter_doc_by_querystring(Doc, QueryString) ->
@@ -205,6 +209,10 @@ should_filter_doc(Doc, K, V) ->
 -spec filter_prop(kz_json:object(), kz_term:ne_binary(), any()) -> kz_term:api_boolean().
 filter_prop(Doc, <<"filter_not_", Key/binary>>, Val) ->
     not should_filter(Doc, Key, Val);
+filter_prop(Doc, <<"filter_from_", Key/binary>>, Val) ->
+    lowerbound(Doc, Key, kz_term:to_integer(Val));
+filter_prop(Doc, <<"filter_to_", Key/binary>>, Val) ->
+    upperbound(Doc, Key, kz_term:to_integer(Val));
 filter_prop(Doc, <<"filter_", Key/binary>>, Val) ->
     should_filter(Doc, Key, Val);
 filter_prop(Doc, <<"has_key">>, Key) ->
@@ -233,6 +241,20 @@ upperbound(DocTimestamp, QSTimestamp) ->
 -spec lowerbound(integer(), integer()) -> boolean().
 lowerbound(DocTimestamp, QSTimestamp) ->
     QSTimestamp =< DocTimestamp.
+
+-spec lowerbound(kz_json:object(), kz_term:ne_binary(), integer()) -> boolean().
+lowerbound(Doc, Key, QSTimestamp) ->
+    Keys = binary_key_to_json_key(Key),
+    lowerbound(kz_json:get_integer_value(Keys, Doc, <<>>)
+                 ,QSTimestamp
+                 ).
+
+-spec upperbound(kz_json:object(), kz_term:ne_binary(), integer()) -> boolean().
+upperbound(Doc, Key, QSTimestamp) ->
+    Keys = binary_key_to_json_key(Key),
+    upperbound(kz_json:get_integer_value(Keys, Doc, <<>>)
+                 ,QSTimestamp
+                 ).
 
 -spec should_filter(binary(), kz_term:ne_binary()) -> boolean().
 should_filter(Val, Val) -> 'true';
