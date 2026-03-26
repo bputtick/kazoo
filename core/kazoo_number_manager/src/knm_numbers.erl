@@ -366,7 +366,7 @@ soft_release(Nums, Options) ->
                ],
     lager:debug("soft_release(~p, ~p)", [Nums, Options]),
     ret(pipe(do_get_pn(Nums, Options)
-            ,[fun try_release/1
+            ,[fun try_soft_release/1
              ,fun (T) -> knm_phone_number:setters(T, Routines) end
              ,fun knm_number:new/1
              ,fun knm_providers:delete/1
@@ -944,6 +944,37 @@ can_release(?NUMBER_STATE_PORT_IN, _) -> 'true';
 can_release(?NUMBER_STATE_IN_SERVICE, _) -> 'true';
 can_release(_, ?CARRIER_LOCAL) -> 'true';
 can_release(_, _) -> 'false'.
+
+-spec try_soft_release(t_pn()) -> t_pn().
+try_soft_release(T) ->
+    pipe(T
+        ,[fun can_soft_release/1
+         ,fun knm_phone_number:is_authorized/1
+         ,fun reset_features/1
+         ]).
+
+-spec can_soft_release(t_pn()) -> t_pn().
+can_soft_release(T0=#{'todo' := PNs}) ->
+    ToState = ?NUMBER_STATE_SOFT_RELEASE,
+    F = fun (PN, T) ->
+                FromState = knm_phone_number:state(PN),
+                case can_soft_release(FromState, knm_phone_number:module_name(PN)) of
+                    'true' -> ok(PN, T);
+                    'false' ->
+                        {'error', A, B, C} = (catch knm_errors:invalid_state_transition('undefined', FromState, ToState)),
+                        Reason = knm_errors:to_json(A, B, C),
+                        ko(knm_phone_number:number(PN), Reason, T)
+                end
+        end,
+    lists:foldl(F, T0, PNs).
+
+-spec can_soft_release(kz_term:ne_binary(), kz_term:ne_binary()) -> boolean().
+can_soft_release(?NUMBER_STATE_RESERVED, _) -> 'true';
+can_soft_release(?NUMBER_STATE_PORT_IN, _) -> 'true';
+can_soft_release(?NUMBER_STATE_AVAILABLE, _) -> 'true';
+can_soft_release(?NUMBER_STATE_IN_SERVICE, _) -> 'true';
+can_soft_release(_, ?CARRIER_LOCAL) -> 'true';
+can_soft_release(_, _) -> 'false'.
 
 -spec reset_features(t_pn()) -> t_pn().
 reset_features(T) ->
