@@ -175,6 +175,13 @@ to_in_service(T, ?NUMBER_STATE_SOFT_RELEASE) ->
                     ,[fun (T0) -> fail_if_mdn(T0, ?NUMBER_STATE_IN_SERVICE, ?NUMBER_STATE_SOFT_RELEASE) end
                      ,fun move_to_in_service_state/1
                      ]);
+to_in_service(T, ?NUMBER_STATE_PORT_OUT) ->
+     %% Allow everyone to rebuy PORT_OUT numbers in case the number is accidentally deleted
+     %% External carriers MUST NOT be contacted
+     knm_numbers:pipe(T
+                     ,[fun (T0) -> fail_if_mdn(T0, ?NUMBER_STATE_IN_SERVICE, ?NUMBER_STATE_PORT_OUT) end
+                      ,fun move_to_in_service_state/1
+                      ]);
 to_in_service(T, ?NUMBER_STATE_RESERVED) ->
     knm_numbers:pipe(T
                     ,[fun (T0) -> fail_if_mdn(T0, ?NUMBER_STATE_IN_SERVICE, ?NUMBER_STATE_RESERVED) end

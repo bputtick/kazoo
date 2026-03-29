@@ -581,13 +581,13 @@ enable_account(AccountId) ->
           kz_json:object().
 response_auth(JObj) ->
     AccountId = kz_json:get_first_defined([<<"account_id">>, <<"pvt_account_id">>], JObj),
-    OwnerId = kz_json:get_first_defined([<<"owner_id">>, <<"user_id">>], JObj),
+    OwnerId = kz_json:get_first_defined([<<"owner_id">>, <<"pvt_owner_id">>, <<"user_id">>], JObj),
     response_auth(JObj, AccountId, OwnerId).
 
 -spec response_auth(kz_json:object(), kz_term:api_binary()) ->
           kz_json:object().
 response_auth(JObj, AccountId) ->
-    OwnerId = kz_json:get_first_defined([<<"owner_id">>, <<"user_id">>], JObj),
+    OwnerId = kz_json:get_first_defined([<<"owner_id">>, <<"pvt_owner_id">>, <<"user_id">>], JObj),
     response_auth(JObj, AccountId, OwnerId).
 
 -spec response_auth(kz_json:object(), kz_term:api_binary(), kz_term:api_binary()) ->

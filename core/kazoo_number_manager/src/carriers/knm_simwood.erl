@@ -104,16 +104,14 @@ acquire_number(Number) ->
 -spec disconnect_number(knm_number:knm_number()) ->
           knm_number:knm_number().
 disconnect_number(Number) ->
-    lager:debug("Let's not disconnect this number and do it manually if we really want to (~p)", [Number]),
-    Number.
-
-%%    Num = to_simwood(Number),
-%%    URL = list_to_binary([?SW_NUMBER_URL, "/", ?SW_ACCOUNT_ID, <<"/allocated/">>, Num]),
-%%    case query_simwood(URL, 'delete') of
-%%        {'ok', _Body} -> Number;
-%%        {'error', Error} ->
-%%            knm_errors:by_carrier(?MODULE, Error, Num)
-%%    end.
+    lager:debug("disconnecting number (~p)", [Number]),
+    Num = to_simwood(Number),
+    URL = list_to_binary([?SW_NUMBER_URL, "/", ?SW_ACCOUNT_ID, <<"/allocated/">>, Num]),
+    case query_simwood(URL, 'delete') of
+        {'ok', _Body} -> Number;
+        {'error', Error} ->
+            knm_errors:by_carrier(?MODULE, Error, Num)
+    end.
 
 %%------------------------------------------------------------------------------
 %% @doc

@@ -185,12 +185,12 @@ allowed_methods(_PhoneNumber, ?ACTIVATE) ->
     [?HTTP_PUT];
 allowed_methods(_PhoneNumber, ?RESERVE) ->
     [?HTTP_PUT];
-allowed_methods(_PhoneNumber, ?RELEASE) ->
-    [?HTTP_PUT];
 allowed_methods(_PhoneNumber, ?PORT) ->
     [?HTTP_PUT];
+allowed_methods(_PhoneNumber, ?RELEASE) ->
+    [?HTTP_PATCH];
 allowed_methods(_PhoneNumber, ?PORT_OUT) ->
-    [?HTTP_PATCH, ?HTTP_PUT];
+    [?HTTP_PATCH];
 allowed_methods(_PhoneNumber, ?IDENTIFY) ->
     [?HTTP_GET].
 
@@ -323,14 +323,14 @@ validate(Context, _Number, ?ACTIVATE) ->
         'true' -> validate_request(Context);
         'false' -> cb_context:add_system_error('too_many_requests', Context)
     end;
-validate(Context, _Number, ?RESERVE) ->
-    validate_request(Context);
-validate(Context, _Number, ?RELEASE) ->
-    validate_request(Context);
-validate(Context, _Number, ?PORT) ->
-    validate_request(Context);
-validate(Context, _Number, ?PORT_OUT) ->
-    validate_request(Context);
+validate(Context, Number, ?RESERVE) ->
+    maybe_validate_owner(Context, Number);
+validate(Context, Number, ?RELEASE) ->
+    maybe_validate_owner(Context, Number);
+validate(Context, Number, ?PORT) ->
+    maybe_validate_owner(Context, Number);
+validate(Context, Number, ?PORT_OUT) ->
+    maybe_validate_owner(Context, Number);
 validate(Context, Number, ?IDENTIFY) ->
     identify(Context, Number).
 
@@ -439,15 +439,6 @@ put(Context, Number, ?RESERVE) ->
     Result = knm_number:reserve(Number, Options),
     CB = fun() -> ?MODULE:put(cb_context:set_accepting_charges(Context), Number, ?RESERVE) end,
     set_response(Result, Context, CB);
-put(Context, Number, ?RELEASE) ->
-    Options = [{'assign_to', cb_context:account_id(Context)}
-              ,{'owner_id', 'undefined'}
-              ,{'public_fields', cb_context:doc(Context)}
-               | default_knm_options(Context)
-              ],
-    Result = knm_number:soft_release(Number, Options),
-    CB = fun() -> ?MODULE:put(cb_context:set_accepting_charges(Context), Number, ?RELEASE) end,
-    set_response(Result, Context, CB);
 put(Context, Number, ?PORT) ->
     Options = [{'assign_to', cb_context:account_id(Context)}
               ,{'owner_id', cb_context:user_id(Context)}
@@ -457,15 +448,6 @@ put(Context, Number, ?PORT) ->
               ],
     Result = knm_number:create(Number, Options),
     CB = fun() -> ?MODULE:put(cb_context:set_accepting_charges(Context), Number, ?PORT) end,
-    set_response(Result, Context, CB);
-put(Context, Number, ?PORT_OUT) ->
-    Options = [{'assign_to', cb_context:account_id(Context)}
-              ,{'owner_id', cb_context:user_id(Context)}
-              ,{'public_fields', cb_context:doc(Context)}
-               | default_knm_options(Context)
-              ],
-    Result = knm_number:update(Number, [{fun knm_phone_number:set_state/2, ?NUMBER_STATE_PORT_OUT}], Options),
-    CB = fun() -> ?MODULE:put(cb_context:set_accepting_charges(Context), Number, ?PORT_OUT) end,
     set_response(Result, Context, CB).
 
 -spec patch(cb_context:context(), path_token()) -> cb_context:context().
@@ -492,6 +474,15 @@ patch(Context, Number, ?PORT_OUT) ->
                                        ,{fun knm_phone_number:set_state/2, ?NUMBER_STATE_PORT_OUT}
                                        ], Options),
     CB = fun() -> ?MODULE:patch(cb_context:set_accepting_charges(Context), Number, ?PORT_OUT) end,
+    set_response(Result, Context, CB);
+patch(Context, Number, ?RELEASE) ->
+    Options = [{'assign_to', cb_context:account_id(Context)}
+              ,{'owner_id', 'undefined'}
+              ,{'public_fields', cb_context:doc(Context)}
+               | default_knm_options(Context)
+              ],
+    Result = knm_number:soft_release(Number, Options),
+    CB = fun() -> ?MODULE:patch(cb_context:set_accepting_charges(Context), Number, ?RELEASE) end,
     set_response(Result, Context, CB).
 
 -spec delete(cb_context:context(), path_token()) -> cb_context:context().
@@ -1028,8 +1019,13 @@ identify(Context, Num) ->
     end.
 
 maybe_validate_owner(Context, Number) ->
-    case fetch_knm_number(Context, Number, cb_context:user_id(Context)) of
-        {'ok', _KNMNumber} -> validate_request(Context);
+    case cb_context:user_id(Context) of
+        'undefined' -> validate_request(Context);
+        UserId -> validate_owner(Context, Number, UserId)
+    end.
+validate_owner(Context, Number, OwnerId) ->
+    case fetch_knm_number(Context, Number, OwnerId) of
+        {'ok', _} -> validate_request(Context);
         {'error', _} -> reply_number_not_found(Context)
     end.
 
