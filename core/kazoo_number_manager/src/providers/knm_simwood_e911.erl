@@ -73,7 +73,7 @@ delete(Number) ->
           {'error', 'not_available'}.
 query_simwood(URL, Verb, JObj) ->
     lager:debug("Querying Simwood. Verb: ~p. URL: ~p.", [Verb, URL]),
-    HTTPOptions = [{'ssl', [{'verify', 'verify_none'}]}
+    HTTPOptions = [{'ssl', [{'verify', 'verify_none'}, {'versions', ['tlsv1.2']}]}
                   ,{'timeout', 180 * ?MILLISECONDS_IN_SECOND}
                   ,{'connect_timeout', 180 * ?MILLISECONDS_IN_SECOND}
                   ,{'basic_auth', {?SW_AUTH_USERNAME, ?SW_AUTH_PASSWORD}}

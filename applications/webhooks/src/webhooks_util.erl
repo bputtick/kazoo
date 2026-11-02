@@ -48,7 +48,13 @@
 -define(CONNECT_TIMEOUT_MS
        ,kapps_config:get_integer(?APP_NAME, <<"connect_timeout_ms">>, 10 * ?MILLISECONDS_IN_SECOND)
        ).
--define(HTTP_OPTS, [{'connect_timeout', ?CONNECT_TIMEOUT_MS}]).
+
+-define(HTTP_OPTS, [
+    {'connect_timeout', ?CONNECT_TIMEOUT_MS},
+    {'ssl', [
+        {'versions', ['tlsv1.2']}
+    ]}
+]).
 
 -define(HTTP_TIMEOUT_MS
        ,kapps_config:get_integer(?APP_NAME, <<"request_timeout_ms">>, 10 * ?MILLISECONDS_IN_SECOND)
